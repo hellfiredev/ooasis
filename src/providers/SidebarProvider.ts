@@ -10,7 +10,7 @@ import {
   WorkspaceFileItem,
 } from '../types/chat';
 import { AGENT_TOOLS, ToolExecutor } from '../tools';
-import { API_HOST, MODEL_NAME, MAX_MESSAGES, KEEP_MESSAGES, MAX_AGENT_ITERATIONS } from '../config';
+import { API_HOST, MAX_MESSAGES, KEEP_MESSAGES, MAX_AGENT_ITERATIONS } from '../config';
 
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
@@ -20,6 +20,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private _webviewView: vscode.WebviewView | undefined;
   private _watcher: vscode.FileSystemWatcher | undefined;
   private _workspaceFilesTimeout: ReturnType<typeof setTimeout> | null = null;
+  private _activeContextWindow: number = 0;
+  private _modelNameDisplay: string = '';
+  private _modelInfoPromise: Promise<void>;
 
   constructor(private readonly _extensionUri: vscode.Uri) {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -28,13 +31,40 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     this.initializeChat();
 
     this._setupFileWatcher();
+    this._modelInfoPromise = this.updateModelInfo();
   }
 
-  public resolveWebviewView(
+  private async updateModelInfo() {
+    try {
+      const res = await fetch(`${API_HOST}/v1/models`);
+      if (res.ok) {
+        const json = await res.json() as any;
+        const modelData = json.data?.[0];
+        if (modelData) {
+          if (modelData.meta?.n_ctx) {
+            this._activeContextWindow = modelData.meta.n_ctx;
+          }
+          this._modelNameDisplay = modelData.id;
+          if (this._webviewView) {
+            this.postToWebview({
+              command: 'modelInfo',
+              info: { name: this._modelNameDisplay, contextWindow: this._activeContextWindow }
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch model info:', e);
+    }
+  }
+
+  public async resolveWebviewView(
     webviewView: vscode.WebviewView,
     _context: vscode.WebviewViewResolveContext,
     _token: vscode.CancellationToken
   ) {
+    await this._modelInfoPromise;
+    
     this._webviewView = webviewView;
 
     webviewView.webview.options = {
@@ -59,7 +89,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 <body>
   <div id="root"></div>
   <script nonce="${nonce}">
-    window.MODEL_NAME = "${MODEL_NAME}";
   </script>
   <script nonce="${nonce}" type="module" src="${scriptUri}"></script>
 </body>
@@ -78,6 +107,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           break;
         case 'newChat':
           await this.initializeChat();
+          break;
+        case 'webviewReady':
+          this.postToWebview({
+            command: 'modelInfo',
+            info: { name: this._modelNameDisplay, contextWindow: this._activeContextWindow }
+          });
           break;
       }
     });
@@ -350,11 +385,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            model: MODEL_NAME,
+            model: this._modelNameDisplay,
             messages: this._chatHistory,
             tools: AGENT_TOOLS,
             tool_choice: 'auto',
             stream: true,
+            stream_options: { include_usage: true },
           }),
         });
 
@@ -386,6 +422,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
             try {
               const chunk = JSON.parse(data) as ChatCompletionChunk;
+              
+              if (chunk.usage) {
+                this.postToWebview({
+                  command: 'tokenUsage',
+                  usage: chunk.usage,
+                  contextWindow: this._activeContextWindow
+                });
+              }
+
               const delta = chunk.choices[0]?.delta;
               if (!delta) { continue; }
 
@@ -556,7 +601,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: MODEL_NAME,
+          model: this._modelNameDisplay,
           messages: [
             { role: 'system', content: 'You are a technical summarizer.' },
             { role: 'user', content: summaryPrompt },

@@ -84,6 +84,7 @@ export interface ChatCompletionChunk {
   created: number;
   model: string;
   choices: ChunkChoice[];
+  usage?: Usage;
 }
 
 export interface ChunkChoice {

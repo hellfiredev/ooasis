@@ -43,6 +43,13 @@ function formatBytes(bytes: number) {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
+function formatK(num: number) {
+  if (num >= 1000) {
+    return Math.floor(num / 1000) + 'K';
+  }
+  return num.toString();
+}
+
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -51,6 +58,8 @@ function App() {
   const [streamingReasoning, setStreamingReasoning] = useState('');
   const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
   const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFileItem[]>([]);
+  const [tokenUsage, setTokenUsage] = useState<{ used: number, total: number } | null>(null);
+  const [modelInfo, setModelInfo] = useState<{ name: string; contextWindow: number } | null>(null);
 
   const [mentionVisible, setMentionVisible] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
@@ -145,11 +154,19 @@ function App() {
             { id: Date.now().toString(), role: 'assistant', content: `<div class="error">${message.text}</div>` }
           ]);
           break;
+        case 'tokenUsage':
+          setTokenUsage({ used: message.usage.total_tokens, total: message.contextWindow });
+          break;
+        case 'modelInfo':
+          setModelInfo(message.info);
+          setTokenUsage({ used: 0, total: message.info.contextWindow });
+          break;
       }
     };
 
     window.addEventListener('message', handleMessage);
     vscode.postMessage({ command: 'getWorkspaceFiles' });
+    vscode.postMessage({ command: 'webviewReady' });
 
     return () => window.removeEventListener('message', handleMessage);
   }, []);
@@ -263,6 +280,7 @@ function App() {
     setIsThinking(false);
     setAttachedFiles([]);
     setInput('');
+    setTokenUsage(null);
     if (inputRef.current) {
       inputRef.current.style.height = 'auto';
     }
@@ -274,7 +292,7 @@ function App() {
   ).slice(0, 25) : [];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       <div className="header">
         <button className="new-chat-btn" onClick={handleNewChat} title="Start a new chat">
           + New Chat
@@ -407,6 +425,22 @@ function App() {
           />
           <button id="send-button" onClick={handleSend} disabled={isThinking}>Send</button>
         </div>
+
+        {(modelInfo || tokenUsage) && (
+          <div className="footer-info">
+            {modelInfo && (
+              <span className="model-label">
+                {modelInfo.name.split(/[/\\]/).pop()?.split('.')[0]}
+              </span>
+            )}
+            {modelInfo && tokenUsage && <span className="separator">·</span>}
+            {tokenUsage && (
+              <span className="usage-label">
+                {formatK(tokenUsage.used)} / {formatK(tokenUsage.total)} tokens
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
