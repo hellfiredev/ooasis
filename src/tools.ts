@@ -3,6 +3,7 @@ import * as path from 'path';
 import {
   ReadFileArgs,
   WriteFileArgs,
+  ReplaceInFileArgs,
   RunTerminalArgs,
   SearchWorkspaceArgs,
   ListDirectoryArgs,
@@ -58,6 +59,37 @@ export const AGENT_TOOLS = [
           },
         },
         required: ['path', 'content'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'replace_in_file',
+      description:
+        'Update an existing file by replacing a specific block of code based on line numbers. The lines from start_line to end_line (inclusive) will be replaced by the provided content.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description:
+              'Path to the file relative to the workspace root. Example: "src/extension.ts"',
+          },
+          start_line: {
+            type: 'number',
+            description: 'The 1-indexed line to start the replacement (inclusive).',
+          },
+          end_line: {
+            type: 'number',
+            description: 'The 1-indexed line to end the replacement (inclusive).',
+          },
+          content: {
+            type: 'string',
+            description: 'The replacement content.',
+          },
+        },
+        required: ['path', 'start_line', 'end_line', 'content'],
       },
     },
   },
@@ -147,6 +179,8 @@ export class ToolExecutor {
           return await this.readFile(args as ReadFileArgs);
         case 'write_file':
           return await this.writeFile(args as WriteFileArgs);
+        case 'replace_in_file':
+          return await this.replaceInFile(args as ReplaceInFileArgs);
         case 'run_terminal':
           return await this.runTerminal(args as RunTerminalArgs);
         case 'search_workspace':
@@ -184,6 +218,42 @@ export class ToolExecutor {
       return `File: ${args.path} (lines ${start + 1}–${end})\n\`\`\`\n${numbered}\n\`\`\``;
     } catch {
       return `Error: Could not read file "${args.path}". Make sure it exists in the workspace.`;
+    }
+  }
+
+  // ── replace_in_file ────────────────────────────────────────────────────────
+
+  private async replaceInFile(args: ReplaceInFileArgs): Promise<string> {
+    const absPath = this.resolveWorkspacePath(args.path);
+    const uri = vscode.Uri.file(absPath);
+
+    try {
+      const bytes = await vscode.workspace.fs.readFile(uri);
+      const fileContent = Buffer.from(bytes).toString('utf-8');
+      
+      const isCrlf = fileContent.includes('\r\n');
+      const lines = fileContent.split(/\r?\n/);
+      const replacementLines = args.content.split(/\r?\n/);
+
+      const start = Math.max(1, args.start_line);
+      const end = Math.min(lines.length, Math.max(start, args.end_line));
+
+      // Lines are 1-indexed, so the array index is start - 1
+      // We remove (end - start + 1) lines and insert the new content
+      lines.splice(start - 1, end - start + 1, ...replacementLines);
+      
+      const newContent = lines.join(isCrlf ? '\r\n' : '\n');
+      const newBytes = Buffer.from(newContent, 'utf-8');
+      await vscode.workspace.fs.writeFile(uri, newBytes);
+
+      // Open in editor so user sees what was written
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc, { preview: true, preserveFocus: true });
+
+      return `Successfully replaced lines ${start} to ${end} in "${args.path}".`;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return `Error replacing in file "${args.path}": ${msg}`;
     }
   }
 

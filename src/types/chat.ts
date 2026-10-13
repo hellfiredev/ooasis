@@ -54,6 +54,13 @@ export interface WriteFileArgs {
   content: string;
 }
 
+export interface ReplaceInFileArgs {
+  path: string;
+  start_line: number;
+  end_line: number;
+  content: string;
+}
+
 export interface RunTerminalArgs {
   command: string;
   cwd?: string;
