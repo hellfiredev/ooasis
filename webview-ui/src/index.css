@@ -103,22 +103,38 @@ body {
   flex: 1;
 }
 
-.edit-icon-btn {
+.user-message-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  position: absolute;
+  top: 12px;
+  right: -8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  z-index: 10;
+}
+
+.msg-user:hover .user-message-actions,
+.user-message-wrapper:hover .user-message-actions {
+  opacity: 1;
+}
+
+.msg-action-btn {
   background: transparent;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
   font-size: 14px;
-  opacity: 0;
-  transition: opacity 0.15s, color 0.15s;
+  transition: color 0.15s;
   padding: 0 4px;
 }
 
-.user-message-wrapper:hover .edit-icon-btn {
-  opacity: 1;
-}
-
-.edit-icon-btn:hover {
+.msg-action-btn:hover {
   color: var(--text);
 }
 
@@ -191,6 +207,9 @@ body {
 }
 
 .msg-content:empty { display: none; }
+
+
+
 
 
 /* ── Summary block ─────────────────────────── */

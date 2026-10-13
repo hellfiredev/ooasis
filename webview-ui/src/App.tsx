@@ -496,6 +496,32 @@ function App() {
     setEditInput('');
   };
 
+  const handleRegenerate = (msgId: string) => {
+    let userTurnCountFromEnd = 0;
+    let foundAssistant = false;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].id === msgId) {
+        foundAssistant = true;
+      }
+      if (messages[i].role === 'user') {
+        if (foundAssistant) {
+          break;
+        }
+        userTurnCountFromEnd++;
+      }
+    }
+
+    if (foundAssistant) {
+      vscode.postMessage({
+        command: 'regenerateChat',
+        countFromEnd: userTurnCountFromEnd,
+      });
+      setIsGenerating(true);
+      setIsThinking(true);
+      setThinkingText('Thinking');
+    }
+  };
+
   const selectMentionFile = (file: WorkspaceFileItem) => {
     const mentionText = '@' + file.name + ' ';
     const startIdx = mentionStartIndex >= 0 ? mentionStartIndex : input.lastIndexOf('@');
@@ -666,16 +692,25 @@ function App() {
                         <div className="user-message-wrapper">
                           <div className="user-text">{msg.content}</div>
                           {!isSummarized && !isGenerating && (
-                            <button 
-                              className="edit-icon-btn" 
-                              onClick={() => {
-                                setEditingMessageId(msg.id);
-                                setEditInput(msg.content);
-                              }}
-                              title="Edit message"
-                            >
-                              ✎
-                            </button>
+                            <div className="user-message-actions">
+                              <button 
+                                className="msg-action-btn" 
+                                onClick={() => {
+                                  setEditingMessageId(msg.id);
+                                  setEditInput(msg.content);
+                                }}
+                                title="Edit message"
+                              >
+                                ✎
+                              </button>
+                              <button 
+                                className="msg-action-btn" 
+                                onClick={() => handleRegenerate(msg.id)}
+                                title="Regenerate response"
+                              >
+                                ↻
+                              </button>
+                            </div>
                           )}
                         </div>
                       )

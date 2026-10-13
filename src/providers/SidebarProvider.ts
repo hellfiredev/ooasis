@@ -157,6 +157,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         case 'editChat':
           await this.handleEditChat(message.text, message.countFromEnd);
           break;
+        case 'regenerateChat':
+          await this.handleRegenerateChat(message.countFromEnd);
+          break;
         case 'getWorkspaceFiles':
           await this.handleGetWorkspaceFiles();
           break;
@@ -499,6 +502,18 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private async handleRegenerateChat(userTurnCountFromEnd: number) {
+    const turn = this._runRegenerateTurn(userTurnCountFromEnd);
+    this._currentTurn = turn;
+    try {
+      await turn;
+    } finally {
+      if (this._currentTurn === turn) {
+        this._currentTurn = null;
+      }
+    }
+  }
+
   private async _runTurn(
     text: string,
     attachments?: FileAttachment[]
@@ -611,6 +626,71 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     });
 
     // 8. Run agent loop
+    try {
+      await this.runAgentLoop();
+    } finally {
+      await this._saveSession();
+    }
+  }
+
+  private async _runRegenerateTurn(userTurnCountFromEnd: number) {
+    this._abortController = new AbortController();
+    const signal = this._abortController.signal;
+
+    // 1. Find dlIndex
+    let c = 0;
+    let dlIndex = -1;
+    for (let i = this._displayLog.entries.length - 1; i >= 0; i--) {
+      if (this._displayLog.entries[i].type === 'user') {
+        if (c === userTurnCountFromEnd) {
+          dlIndex = i;
+          break;
+        }
+        c++;
+      }
+    }
+
+    // 2. Find apiIndex
+    c = 0;
+    let apiIndex = -1;
+    for (let i = this._chatHistory.length - 1; i >= 0; i--) {
+      if (this._chatHistory[i].role === 'user') {
+        if (c === userTurnCountFromEnd) {
+          apiIndex = i;
+          break;
+        }
+        c++;
+      }
+    }
+
+    if (dlIndex === -1 || apiIndex === -1) {
+      this.postToWebview({ command: 'agentError', text: 'Error: Could not find message to regenerate.' });
+      return;
+    }
+
+    // 3. Truncate histories AFTER the user message
+    this._displayLog.truncate(dlIndex + 1);
+    this._chatHistory.splice(apiIndex + 1);
+
+    // 4. Check summarization
+    if (this._summarizer.shouldSummarize(this._totalUsedTokens, this._activeContextWindow)) {
+      await this.performSummarization(signal);
+    }
+    if (signal.aborted) {
+      this.postToWebview({ command: 'finalizeStream', text: '*(Stopped)*', done: true });
+      return;
+    }
+
+    // 5. Update UI
+    this.postToWebview({
+      command: 'sessionRestored',
+      sessionId: this._sessionId,
+      entries: this._displayLog.entries,
+      usage: { total_tokens: this._totalUsedTokens },
+      contextWindow: this._activeContextWindow,
+    });
+
+    // 6. Run agent loop
     try {
       await this.runAgentLoop();
     } finally {
