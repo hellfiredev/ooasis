@@ -609,7 +609,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     // 3. Extract original attachments and truncate histories
     const originalDlMsg = this._displayLog.entries[dlIndex];
-    if (originalDlMsg.type !== 'user') return;
+    if (originalDlMsg.type !== 'user') {
+      return;
+    }
     const dlAttachments = originalDlMsg.attachments;
     this._displayLog.truncate(dlIndex);
 
