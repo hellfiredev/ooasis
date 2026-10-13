@@ -215,3 +215,14 @@ export interface SessionFile extends SessionMeta {
   /** Full human-readable transcript — used for re-rendering and export */
   displayLog: DisplayEntry[];
 }
+
+// ─── Webview Logging Types ──────────────────────────────────────────────────
+
+export type WebviewLogLevel = 'log' | 'info' | 'warn' | 'error' | 'debug';
+
+export interface WebviewLogPayload {
+  command: 'log';
+  level: WebviewLogLevel;
+  text: string;
+}
+

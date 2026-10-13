@@ -9,6 +9,7 @@ import {
   WorkspaceFileItem,
   SessionFile,
   SessionMeta,
+  WebviewLogLevel,
 } from '../types/chat';
 import { AGENT_TOOLS, ToolExecutor } from '../tools';
 import { API_HOST, getMaxAgentIterations, getMaxContinuations } from '../config';
@@ -44,11 +45,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private _sessionCreatedAt = 0;
   private _displayLog = new DisplayLogBuilder();
   private _currentTurn: Promise<void> | null = null;
+  private readonly _outputChannel: vscode.OutputChannel;
 
   constructor(
     private readonly _extensionUri: vscode.Uri,
     private readonly _sessionStore: SessionStore,
+    outputChannel?: vscode.OutputChannel,
   ) {
+    this._outputChannel = outputChannel ?? vscode.window.createOutputChannel('Ooasis');
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     this._toolExecutor = new ToolExecutor(
       workspaceRoot,
@@ -121,7 +125,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webviewView.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webviewView.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webviewView.webview.cspSource} blob:; worker-src ${webviewView.webview.cspSource} blob:;">
   <title>Local AI Agent</title>
   <link href="${styleUri}" rel="stylesheet">
 </head>
@@ -178,6 +182,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             }
             this._pendingConfirmations.delete(message.id);
           }
+          break;
+        case 'log':
+          this.handleWebviewLog(message.level, message.text);
           break;
       }
     });
@@ -354,23 +361,23 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
       if (att.isBinary) {
         formatted += ` (${this.formatBytes(att.size)})\n*(Binary file attached. Use workspace tools if needed.)*`;
-        continue;
-      }
+          continue;
+        }
 
       try {
         const uri = vscode.Uri.file(att.fsPath);
         const rawBytes = await vscode.workspace.fs.readFile(uri);
 
-        if (rawBytes.length <= MAX_INLINE_BYTES) {
+          if (rawBytes.length <= MAX_INLINE_BYTES) {
           const text = Buffer.from(rawBytes).toString('utf-8');
-          const lang = this.getLanguageId(att.name);
+            const lang = this.getLanguageId(att.name);
           formatted += ` (${this.formatBytes(att.size)})\n\`\`\`${lang}\n${text}\n\`\`\``;
-        } else {
-          const fullText = Buffer.from(rawBytes).toString('utf-8');
-          const lines = fullText.split('\n');
-          const truncatedLines = lines.slice(0, 500).join('\n');
-          const lang = this.getLanguageId(att.name);
-          formatted += ` (${this.formatBytes(att.size)} - Truncated: showing first 500 of ${lines.length} lines)\n\`\`\`${lang}\n${truncatedLines}\n\`\`\`\n*(Note: This file was truncated due to size. Use the \`read_file\` tool with start_line/end_line to inspect more.)*`;
+          } else {
+            const fullText = Buffer.from(rawBytes).toString('utf-8');
+            const lines = fullText.split('\n');
+            const truncatedLines = lines.slice(0, 500).join('\n');
+            const lang = this.getLanguageId(att.name);
+            formatted += ` (${this.formatBytes(att.size)} - Truncated: showing first 500 of ${lines.length} lines)\n\`\`\`${lang}\n${truncatedLines}\n\`\`\`\n*(Note: This file was truncated due to size. Use the \`read_file\` tool with start_line/end_line to inspect more.)*`;
         }
       } catch (err) {
         formatted += `\n*(Error reading file content: ${err instanceof Error ? err.message : String(err)})*`;
@@ -984,6 +991,32 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       const msg = err instanceof Error ? err.message : String(err);
       vscode.window.showErrorMessage(`Ooasis: Failed to export conversation: ${msg}`);
     }
+  }
+
+  public handleWebviewLog(level: WebviewLogLevel, text: string): void {
+    const timestamp = new Date().toLocaleTimeString();
+    const prefix = `[Webview][${(level || 'log').toUpperCase()}]`;
+    const formatted = `${prefix} ${text ?? ''}`;
+
+    switch (level) {
+      case 'error':
+        console.error(formatted);
+        break;
+      case 'warn':
+        console.warn(formatted);
+        break;
+      case 'info':
+        console.info(formatted);
+        break;
+      case 'debug':
+        console.debug(formatted);
+        break;
+      default:
+        console.log(formatted);
+        break;
+    }
+
+    this._outputChannel.appendLine(`[${timestamp}] ${formatted}`);
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
