@@ -31,7 +31,10 @@ webview-ui/index.html
 .github/**
 CODEOWNERS
 .prettierrc
+.claude/**
+.mcp.json
 out/**
 !out/extension.js
 webview-ui/dist/assets/*.ttf
 webview-ui/dist/assets/*.woff
+

@@ -18,7 +18,10 @@ yarn-debug.log*
 # Environment & Local Config
 .env
 .env*.local
+.claude/
+.mcp.json
 
 # Test & Coverage
 coverage/
 .nyc_output/
+
