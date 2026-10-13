@@ -11,16 +11,16 @@ This project is a VS Code extension that leverages a modern web stack for its UI
 The application is divided into two main parts that communicate via message passing:
 
 1. **Extension Host (Node.js)**: 
-   Runs the core extension logic in `src/`. It manages the lifecycle of the extension, handles API requests to the LLM, reads workspace context, and manages the VS Code sidebar provider (`SidebarProvider.ts`).
+   Runs the core extension logic in `src/`. It manages the lifecycle of the extension, handles API requests to the LLM, reads workspace context, and manages the VS Code sidebar provider (`src/providers/SidebarProvider.ts`).
 2. **Webview UI (React + Vite)**: 
-   Located in the `webview-ui/` directory, this is a modern React application built with Vite and styled using Tailwind CSS. It serves as the frontend for the chat interface, handling the display of chat messages, reasoning blocks, and capturing user inputs.
+   Located in the `webview-ui/` directory, this is a modern React application built with Vite and styled using standard CSS. It serves as the frontend for the chat interface, handling the display of chat messages, reasoning blocks, and capturing user inputs.
 
 ## Features
 
 - **Integrated Chat Interface**: Access the AI assistant directly from the secondary sidebar (Ooasis).
 - **Streaming Responses**: Real-time token streaming for fast and responsive AI replies.
 - **Reasoning Display**: Dedicated UI components for displaying the AI's internal reasoning and thought processes.
-- **Modern Web UI**: Beautiful and responsive UI powered by React and Tailwind CSS.
+- **Modern Web UI**: Beautiful and responsive UI powered by React and standard CSS.
 - **Context-Aware**: Capable of reading active files and interacting with the VS Code workspace context.
 
 ## Development Setup
@@ -42,10 +42,9 @@ npm install
 ### 2. Run for Development
 
 1. **Start the Watchers**:
-   In your terminal, run the following commands to watch for changes in both the extension TypeScript files and the Tailwind CSS:
+   In your terminal, run the following command to watch for changes in the extension TypeScript files:
    ```bash
    npm run watch
-   npm run watch:tailwind
    ```
    
 2. **Launch the Extension in VS Code**:
