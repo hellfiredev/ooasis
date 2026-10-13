@@ -11,12 +11,25 @@ import { ChatCompletionResponse } from './types/chat';
 dotenv.config({ path: path.join(__dirname, '../.env') });
 
 const API_HOST = process.env.API_HOST;
+const MODEL_NAME = "gemma-e4b";
+const MAX_MESSAGES = 20;
+const KEEP_MESSAGES = 4;
 
 const window = new JSDOM('').window;
 const DOMPurify = createDOMPurify(window);
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
-	constructor(private readonly _extensionUri: vscode.Uri) { }
+	// Add an array to store the conversation
+	private _chatHistory: { role: string; content: string }[] = [];
+	private _isSummarizing = false;
+
+	constructor(private readonly _extensionUri: vscode.Uri) {
+		// Add an initial system prompt to set the AI's behavior
+		this._chatHistory.push({
+			role: 'system',
+			content: 'You are a helpful coding assistant in VS Code.'
+		});
+	}
 
 	public resolveWebviewView(
 		webviewView: vscode.WebviewView,
@@ -51,53 +64,137 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 						return;
 
 					case 'sendChat':
-						fetch(`${API_HOST}/v1/chat/completions`, {
-							method: "POST",
-							headers: {
-								"Content-Type": "application/json"
-							},
-							body: JSON.stringify({
-								"model": "gemma-e4b",
-								"messages": [{ "role": "user", "content": message.text }]
-							})
-						})
-							.then(res => res.json())
-							.then(data => {
-								console.log("data:", data);
-								const completionResponse = data as ChatCompletionResponse;
-								const content = completionResponse.choices[0].message.content;
-								const reasoning = completionResponse.choices[0].message.reasoning_content;
+						this._chatHistory.push({ role: 'user', content: message.text });
+						const shouldSummarizeChat = this._chatHistory.length > MAX_MESSAGES && !this._isSummarizing;
 
-								console.log("Reasoning:", reasoning);
-								console.log("Content:", content);
-
-								return Promise.all([
-									marked.parse(content),
-									reasoning ? marked.parse(reasoning) : undefined,
-								]);
-							})
-							.then(([parsedContent, parsedReasoning]) => {
-								webviewView.webview.postMessage({
-									command: 'receiveChat',
-									text: DOMPurify.sanitize(parsedContent),
-									reasoning: parsedReasoning ? DOMPurify.sanitize(parsedReasoning) : undefined,
-								});
-							})
-							.catch(err => {
-								console.error(err)
-								webviewView.webview.postMessage({
-									command: 'receiveChat',
-									text: 'Error connecting to the AI model.'
-								});
+						if (shouldSummarizeChat) {
+							webviewView.webview.postMessage({
+								command: 'loadingMessage',
+								text: 'Summarizing chat...'
 							});
+						}
+
+						this.triggerBackgroundSummary(shouldSummarizeChat)
+							.then(() => {
+								if (shouldSummarizeChat) {
+									webviewView.webview.postMessage({
+										command: 'loadingMessage',
+										text: 'Chat summarized, continue thinking...'
+									});
+								}
+
+								fetch(`${API_HOST}/v1/chat/completions`, {
+									method: "POST",
+									headers: {
+										"Content-Type": "application/json"
+									},
+									body: JSON.stringify({
+										"model": MODEL_NAME,
+										"messages": this._chatHistory
+									})
+								})
+									.then(res => res.json())
+									.then(data => {
+										console.log("data:", data);
+										const completionResponse = data as ChatCompletionResponse;
+										const content = completionResponse.choices[0].message.content;
+										const reasoning = completionResponse.choices[0].message.reasoning_content;
+										const role = completionResponse.choices[0].message.role;
+
+										this._chatHistory.push({ role: role, content: content });
+
+										console.log("Reasoning:", reasoning);
+										console.log("Content:", content);
+
+										return Promise.all([
+											marked.parse(content),
+											reasoning ? marked.parse(reasoning) : undefined,
+										]);
+									})
+									.then(([parsedContent, parsedReasoning]) => {
+										webviewView.webview.postMessage({
+											command: 'receiveChat',
+											text: DOMPurify.sanitize(parsedContent),
+											reasoning: parsedReasoning ? DOMPurify.sanitize(parsedReasoning) : undefined,
+										});
+									})
+									.catch(err => {
+										this._chatHistory.pop();
+
+										console.error(err)
+										webviewView.webview.postMessage({
+											command: 'receiveChat',
+											text: 'Error connecting to the AI model.'
+										});
+									});
+							});
+
 						return;
 				}
 			}
 		);
 	}
 
+	private getNonce() {
+		let text = '';
+		const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+		for (let i = 0; i < 32; i++) {
+			text += possible.charAt(Math.floor(Math.random() * possible.length));
+		}
+		return text;
+	}
+
+	private async triggerBackgroundSummary(summarize: boolean) {
+		try {
+			if (!API_HOST) throw new Error("Could not connect to the host server");
+
+			if (summarize) {
+				this._isSummarizing = true;
+
+				const systemPrompt = this._chatHistory[0];
+				const messagesToSummarize = this._chatHistory.slice(1, -1 * KEEP_MESSAGES);
+				const summarizeCount = messagesToSummarize.length;
+
+				const transcript = messagesToSummarize.map(msg => `${msg.role.toUpperCase()}: ${msg.content}`).join('\n\n');
+				const summaryPrompt = `Summarize the following conversation concisely. Capture key technical details and context.\n\nTranscript:\n${transcript}`;
+
+				const response = await fetch(`${API_HOST}/v1/chat/completions`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						model: MODEL_NAME,
+						messages: [
+							{ role: 'system', content: 'You are a technical summarizer.' },
+							{ role: 'user', content: summaryPrompt }
+						],
+					})
+				});
+
+				const data = await response.json();
+				const summaryText = data.choices[0].message.content.trim();
+
+				// Race condition defense: Slice from the end to retain any messages 
+				// the user sent WHILE the summary was generating.
+				const retainedRecentMessages = this._chatHistory.slice(summarizeCount + 1);
+
+				this._chatHistory = [
+					systemPrompt,
+					{ role: 'system', content: `Summary of previous conversation: ${summaryText}` },
+					...retainedRecentMessages
+				];
+
+				this._isSummarizing = false;
+			}
+
+			return "success";
+		} catch (error) {
+			console.error('Summarization failed:', error);
+			return "[Context summary unavailable due to error]";
+		}
+	}
+
 	private getHtmlContent(styleUri: vscode.Uri, webview: vscode.Webview): string {
-		const nonce = getNonce();
+		const nonce = this.getNonce();
 
 		return `
     <!DOCTYPE html>
@@ -114,10 +211,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       
       <!-- Chat Messages List -->
       <div id="chat-container" class="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-        <!-- Initial system message: changed to bg-gray-100 and border-gray-200 -->
-        <div class="bg-gray-100 border border-gray-200 p-3 rounded-lg self-start max-w-[85%] shadow-sm">
-          <p class="text-sm">Hello! How can I help you today?</p>
-        </div>
       </div>
 
       <!-- Input Area pinned to bottom: changed to bg-gray-50 and border-gray-200 -->
@@ -218,7 +311,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 			
 			chatContainer.appendChild(replyDiv);
 			chatContainer.scrollTop = chatContainer.scrollHeight;
-          }
+          } else if (message.command === 'loadingMessage') {
+			const loader = document.getElementById('loading-indicator');
+			loader.innerHTML = \`<p class="text-sm text-gray-500 animate-pulse">\${message.text}</p>\`;
+		  }
         });
       </script>
     </body>
@@ -255,12 +351,3 @@ export function activate(context: vscode.ExtensionContext) {
 
 // This method is called when your extension is deactivated
 export function deactivate() { }
-
-function getNonce() {
-  let text = '';
-  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  for (let i = 0; i < 32; i++) {
-    text += possible.charAt(Math.floor(Math.random() * possible.length));
-  }
-  return text;
-}
