@@ -4,8 +4,5 @@ node_modules
 .vscode-test/
 *.vsix
 
-.env
-.env.*
-!.env.example
 
 .idea/

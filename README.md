@@ -39,11 +39,7 @@ cd webview-ui
 npm install
 ```
 
-### 2. Environment Variables
-
-Create a `.env` file in the root directory and add any necessary environment variables (e.g., API keys). You can copy the structure from `.env.example`.
-
-### 3. Run for Development
+### 2. Run for Development
 
 1. **Start the Watchers**:
    In your terminal, run the following commands to watch for changes in both the extension TypeScript files and the Tailwind CSS:
