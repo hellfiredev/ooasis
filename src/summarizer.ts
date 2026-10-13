@@ -42,7 +42,6 @@ export class ConversationSummarizer {
     modelName: string,
     signal?: AbortSignal
   ): Promise<SummarizerResult> {
-    console.debug(`start summarize()`);
     this._isSummarizing = true;
 
     try {
@@ -51,7 +50,6 @@ export class ConversationSummarizer {
       const messagesToSummarize = chatHistory.slice(1, -1);
 
       if (messagesToSummarize.length === 0) {
-        console.debug("messagesToSummarize is empty");
         return {
           summary: '',
           trimmedHistory: chatHistory,
@@ -61,7 +59,6 @@ export class ConversationSummarizer {
 
       const summarizeCount = messagesToSummarize.length;
       const transcript = this.buildTranscript(messagesToSummarize);
-      console.log("transcript to summarize:", transcript);
       const summaryPrompt = this.buildSummaryPrompt(transcript);
 
       const response = await fetch(`${API_HOST}/v1/chat/completions`, {
@@ -82,7 +79,13 @@ export class ConversationSummarizer {
       }
 
       const data = (await response.json()) as ChatCompletionResponse;
-      const summaryText = data.choices[0].message.content?.trim() ?? '';
+      const responseContent = data.choices[0].message.content;
+      let summaryText = '';
+      if (typeof responseContent === 'string') {
+        summaryText = responseContent.trim();
+      } else if (Array.isArray(responseContent)) {
+        summaryText = responseContent.filter(p => p.type === 'text').map(p => (p as any).text).join('\n').trim();
+      }
 
       // Rebuild history: system prompt + messages that were not summarized
       const retainedMessages = chatHistory.slice(summarizeCount + 1);
@@ -113,8 +116,20 @@ export class ConversationSummarizer {
     const parts: string[] = [];
 
     for (const msg of messages) {
+      if (msg.role === 'tool') {
+        continue;
+      }
       const chatMsg = msg as Message;
-      parts.push(`${chatMsg.role.toUpperCase()}: ${chatMsg.content}`);
+      let textContent = '';
+      if (typeof chatMsg.content === 'string') {
+        textContent = chatMsg.content;
+      } else if (Array.isArray(chatMsg.content)) {
+        textContent = chatMsg.content
+          .filter(p => p.type === 'text')
+          .map(p => (p as any).text)
+          .join('\n');
+      }
+      parts.push(`${chatMsg.role.toUpperCase()}: ${textContent}`);
     }
 
     return parts.join('\n');

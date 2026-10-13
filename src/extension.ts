@@ -12,8 +12,6 @@ export function activate(context: vscode.ExtensionContext) {
   const sessionStore = new SessionStore(storageBase, getMaxSessions);
   const provider = new SidebarProvider(context.extensionUri, sessionStore, outputChannel);
 
-  console.log('Local AI Agent extension activated!');
-
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider('my-custom-ui-view', provider, {
       webviewOptions: { retainContextWhenHidden: true }

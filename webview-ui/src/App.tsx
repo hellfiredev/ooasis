@@ -3,8 +3,17 @@ import { vscode } from './vscodeApi';
 import { marked } from 'marked';
 import markedKatex from 'marked-katex-extension';
 import DOMPurify from 'dompurify';
+import { PDFParse } from 'pdf-parse';
+import pdfWorkerText from 'pdfjs-dist/build/pdf.worker.min.mjs?raw';
 import 'katex/dist/katex.min.css';
 import './index.css';
+
+try {
+  const blob = new Blob([pdfWorkerText], { type: 'application/javascript' });
+  PDFParse.setWorker(URL.createObjectURL(blob));
+} catch (e) {
+  console.error('Failed to initialize PDF worker:', e);
+}
 
 marked.use(markedKatex({ throwOnError: false }));
 
@@ -15,6 +24,24 @@ interface FileAttachment {
   relativePath: string;
   size: number;
   isBinary: boolean;
+  data?: string;
+  extractedText?: string;
+}
+
+async function extractPdfText(base64Data: string): Promise<string> {
+  const binaryString = atob(base64Data);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  const parser = new PDFParse({ data: bytes });
+  try {
+    const result = await parser.getText();
+    return result.text || '';
+  } finally {
+    await parser.destroy();
+  }
 }
 
 interface WorkspaceFileItem {
@@ -173,17 +200,37 @@ function App() {
         case 'workspaceFiles':
           setWorkspaceFiles(message.files);
           break;
-        case 'filesAttached':
-          setAttachedFiles(prev => {
-            const newFiles = [...prev];
-            message.files.forEach((f: FileAttachment) => {
-              if (!newFiles.some(existing => existing.fsPath === f.fsPath)) {
-                newFiles.push(f);
+        case 'filesAttached': {
+          const incomingFiles: FileAttachment[] = message.files || [];
+          Promise.all(
+            incomingFiles.map(async (file) => {
+              if (file.name.toLowerCase().endsWith('.pdf') && file.data) {
+                try {
+                  const extracted = await extractPdfText(file.data);
+                  return { ...file, extractedText: extracted, data: undefined };
+                } catch (err) {
+                  console.error('Failed to parse PDF in frontend:', err);
+                  return file;
+                }
               }
+              return file;
+            })
+          ).then((processedFiles) => {
+            setAttachedFiles(prev => {
+              const newFiles = [...prev];
+              processedFiles.forEach((f: FileAttachment) => {
+                const existingIdx = newFiles.findIndex(existing => existing.fsPath === f.fsPath);
+                if (existingIdx >= 0) {
+                  newFiles[existingIdx] = f;
+                } else {
+                  newFiles.push(f);
+                }
+              });
+              return newFiles;
             });
-            return newFiles;
           });
           break;
+        }
         case 'loadingMessage':
           setIsGenerating(true);
           setIsThinking(true);
@@ -632,7 +679,7 @@ function App() {
           <div id="attachments-tray" style={{ display: 'flex' }}>
             {attachedFiles.map(file => (
               <div key={file.id} className="attachment-chip">
-                <span>{file.isBinary ? '📦' : '📄'}</span>
+                <span>{file.name.toLowerCase().endsWith('.pdf') ? '📕' : file.isBinary ? '📦' : '📄'}</span>
                 <span className="chip-name">{file.name}</span>
                 <span className="chip-size">{formatBytes(file.size)}</span>
               </div>

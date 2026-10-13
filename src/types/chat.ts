@@ -17,8 +17,13 @@ export interface Choice {
   message: Message;
 }
 
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+  | { type: 'file_url'; file_url: { url: string } };
+
 export interface Message {
-  content: string | null;
+  content: string | ContentPart[] | null;
   reasoning_content?: string;
   role: string;
   tool_calls?: ToolCall[];
@@ -144,6 +149,8 @@ export interface FileAttachment {
   relativePath: string;
   size: number;
   isBinary: boolean;
+  data?: string;
+  extractedText?: string;
 }
 
 export interface WorkspaceFileItem {

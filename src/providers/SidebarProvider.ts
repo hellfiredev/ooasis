@@ -9,6 +9,7 @@ import {
   WorkspaceFileItem,
   SessionFile,
   SessionMeta,
+  ContentPart,
   WebviewLogLevel,
 } from '../types/chat';
 import { AGENT_TOOLS, ToolExecutor } from '../tools';
@@ -304,6 +305,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       const fileName = path.basename(uri.fsPath);
       const relativePath = vscode.workspace.asRelativePath(uri);
       const isBinary = await this.isBinaryFile(uri, stat.size);
+      const ext = path.extname(uri.fsPath).toLowerCase();
+
+      let data: string | undefined;
+      if (ext === '.pdf') {
+        const rawBytes = await vscode.workspace.fs.readFile(uri);
+        data = Buffer.from(rawBytes).toString('base64');
+      }
 
       const attachment: FileAttachment = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
@@ -312,6 +320,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         relativePath,
         size: stat.size,
         isBinary,
+        data,
       };
 
       this.postToWebview({
@@ -352,39 +361,65 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     return false;
   }
 
-  private async formatAttachmentsForPrompt(attachments: FileAttachment[]): Promise<string> {
-    let formatted = '';
+  private getMimeType(ext: string): string {
+    const map: Record<string, string> = {
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp',
+      '.pdf': 'application/pdf',
+      '.mp4': 'video/mp4', '.mov': 'video/quicktime',
+    };
+    return map[ext.toLowerCase()] || 'application/octet-stream';
+  }
+
+  private async buildMessageContent(text: string, attachments?: FileAttachment[]): Promise<string | ContentPart[]> {
+    if (!attachments || attachments.length === 0) {
+      return text;
+    }
+
+    const parts: ContentPart[] = [{ type: 'text', text }];
     const MAX_INLINE_BYTES = 50 * 1024; // 50 KB
 
     for (const att of attachments) {
-      formatted += `\n\n### Attached File: \`${att.relativePath}\``;
-
-      if (att.isBinary) {
-        formatted += ` (${this.formatBytes(att.size)})\n*(Binary file attached. Use workspace tools if needed.)*`;
+      const uri = vscode.Uri.file(att.fsPath);
+      const ext = path.extname(att.fsPath).toLowerCase();
+      try {
+        if (att.extractedText) {
+          const formatted = `\n\n### Attached PDF File: \`${att.relativePath}\`\n\n${att.extractedText}`;
+          parts.push({ type: 'text', text: formatted });
           continue;
         }
 
-      try {
-        const uri = vscode.Uri.file(att.fsPath);
         const rawBytes = await vscode.workspace.fs.readFile(uri);
 
+        if (!att.isBinary) {
+          let formatted = `\n\n### Attached File: \`${att.relativePath}\``;
           if (rawBytes.length <= MAX_INLINE_BYTES) {
-          const text = Buffer.from(rawBytes).toString('utf-8');
+            const fileText = Buffer.from(rawBytes).toString('utf-8');
             const lang = this.getLanguageId(att.name);
-          formatted += ` (${this.formatBytes(att.size)})\n\`\`\`${lang}\n${text}\n\`\`\``;
+            formatted += ` (${this.formatBytes(att.size)})\n\`\`\`${lang}\n${fileText}\n\`\`\``;
           } else {
             const fullText = Buffer.from(rawBytes).toString('utf-8');
             const lines = fullText.split('\n');
             const truncatedLines = lines.slice(0, 500).join('\n');
             const lang = this.getLanguageId(att.name);
             formatted += ` (${this.formatBytes(att.size)} - Truncated: showing first 500 of ${lines.length} lines)\n\`\`\`${lang}\n${truncatedLines}\n\`\`\`\n*(Note: This file was truncated due to size. Use the \`read_file\` tool with start_line/end_line to inspect more.)*`;
+          }
+          parts.push({ type: 'text', text: formatted });
+        } else {
+          const base64 = Buffer.from(rawBytes).toString('base64');
+          const mime = this.getMimeType(ext);
+
+          if (mime.startsWith('image/') || mime.startsWith('video/')) {
+            parts.push({ type: 'image_url', image_url: { url: `data:${mime};base64,${base64}` } });
+          } else {
+            parts.push({ type: 'file_url', file_url: { url: `data:${mime};base64,${base64}` } });
+          }
         }
       } catch (err) {
-        formatted += `\n*(Error reading file content: ${err instanceof Error ? err.message : String(err)})*`;
+        parts.push({ type: 'text', text: `\n*(Error reading file ${att.relativePath}: ${err instanceof Error ? err.message : String(err)})*` });
       }
     }
 
-    return formatted;
+    return parts.length === 1 && parts[0].type === 'text' ? parts[0].text : parts;
   }
 
   private formatBytes(bytes: number): string {
@@ -453,11 +488,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     this._displayLog.addUser(text, attachments?.map((a) => a.relativePath));
 
     try {
-      let userContent = text;
-
-      if (attachments && attachments.length > 0) {
-        userContent += await this.formatAttachmentsForPrompt(attachments);
-      }
+      const userContent = await this.buildMessageContent(text, attachments);
 
       this._chatHistory.push({ role: 'user', content: userContent });
 
@@ -562,7 +593,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
       try {
         const apiMessages = this._chatHistory;
-        console.debug("Chat history after summarized:", this._chatHistory);
 
         const response = await fetch(`${API_HOST}/v1/chat/completions`, {
           method: 'POST',
