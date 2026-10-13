@@ -332,12 +332,6 @@ function App() {
           setInput(prev => prev ? prev + '\n\n' + message.text : message.text);
           if (inputRef.current) {
             inputRef.current.focus();
-            setTimeout(() => {
-              if (inputRef.current) {
-                inputRef.current.style.height = 'auto';
-                inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 120) + 'px';
-              }
-            }, 0);
           }
           break;
         case 'modelInfo':
@@ -414,16 +408,18 @@ function App() {
     prevMessagesRef.current = currentMessages;
   }, [messages, streamingContent, streamingReasoning, isThinking, isGenerating]);
 
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+      inputRef.current.style.height = Math.min(inputRef.current.scrollHeight + 2, 120) + 'px';
+    }
+  }, [input]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
     setInput(val);
     
     setAttachedFiles(prev => prev.filter(f => val.includes(`@${f.name}`)));
-    
-    // Auto-resize
-    e.target.style.height = 'auto';
-    e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
 
     // Check mention
     const cursorPos = e.target.selectionStart;
@@ -464,10 +460,6 @@ function App() {
     setIsGenerating(true);
     setIsThinking(true);
     setThinkingText('Thinking');
-    
-    if (inputRef.current) {
-      inputRef.current.style.height = 'auto';
-    }
   };
 
   const selectMentionFile = (file: WorkspaceFileItem) => {
@@ -506,9 +498,6 @@ function App() {
     setCurrentSessionId(undefined);
     setView('chat');
     setTokenUsage(prev => prev ? { used: 0, total: prev.total } : null);
-    if (inputRef.current) {
-      inputRef.current.style.height = 'auto';
-    }
   };
 
   const toggleHistory = () => {
