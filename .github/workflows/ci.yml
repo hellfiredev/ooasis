@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint & Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Root Dependencies
+        run: npm ci
+
+      - name: Install Webview Dependencies
+        run: npm --prefix webview-ui ci
+
+      - name: Lint Extension Host
+        run: npm run lint
+
+      - name: Lint Webview UI
+        run: npm --prefix webview-ui run lint
+
+      - name: Typecheck Extension Host
+        run: npx tsc --noEmit
+
+      - name: Build Webview UI
+        run: npm --prefix webview-ui run build
+
+  test:
+    name: Test (${{ matrix.os }})
+    needs: lint
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Root Dependencies
+        run: npm ci
+
+      - name: Install Webview Dependencies
+        run: npm --prefix webview-ui ci
+
+      - name: Compile Extension
+        run: npm run compile
+
+      - name: Run Tests (Linux - Xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm test
+
+      - name: Run Tests (macOS / Windows)
+        if: runner.os != 'Linux'
+        run: npm test
+
+  package-check:
+    name: Package Validation
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Root Dependencies
+        run: npm ci
+
+      - name: Install Webview Dependencies
+        run: npm --prefix webview-ui ci
+
+      - name: Package VSIX
+        run: npm run package
