@@ -143,6 +143,8 @@ function App() {
     const val = e.target.value;
     setInput(val);
     
+    setAttachedFiles(prev => prev.filter(f => val.includes(`@${f.name}`)));
+    
     // Auto-resize
     e.target.style.height = 'auto';
     e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
@@ -188,10 +190,6 @@ function App() {
     if (inputRef.current) {
       inputRef.current.style.height = 'auto';
     }
-  };
-
-  const removeAttachment = (fsPath: string) => {
-    setAttachedFiles(prev => prev.filter(f => f.fsPath !== fsPath));
   };
 
   const selectMentionFile = (file: WorkspaceFileItem) => {
@@ -325,7 +323,6 @@ function App() {
                 <span>{file.isBinary ? '📦' : '📄'}</span>
                 <span className="chip-name">{file.name}</span>
                 <span className="chip-size">{formatBytes(file.size)}</span>
-                <button className="chip-remove" onClick={() => removeAttachment(file.fsPath)}>&times;</button>
               </div>
             ))}
           </div>
