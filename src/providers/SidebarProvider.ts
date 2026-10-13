@@ -304,7 +304,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   // ─── Agent Loop ───────────────────────────────────────────────────────────
 
   private async runAgentLoop() {
-    for (let iteration = 0; iteration < MAX_AGENT_ITERATIONS; iteration++) {
+    for (let iteration = 0; MAX_AGENT_ITERATIONS === -1 || iteration < MAX_AGENT_ITERATIONS; iteration++) {
       // Show streaming indicator
       this.postToWebview({ command: 'agentThinking', iteration });
 
@@ -497,10 +497,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     // Exceeded max iterations
-    this.postToWebview({
-      command: 'agentError',
-      text: `Agent reached maximum iterations (${MAX_AGENT_ITERATIONS}). Stopping.`,
-    });
+    if (MAX_AGENT_ITERATIONS !== -1) {
+      this.postToWebview({
+        command: 'agentError',
+        text: `Agent reached maximum iterations (${MAX_AGENT_ITERATIONS}). Stopping.`,
+      });
+    }
   }
 
   // ─── Summarization ────────────────────────────────────────────────────────
