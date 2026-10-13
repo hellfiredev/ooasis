@@ -13,6 +13,12 @@
   "icon": "images/icon.png",
   "publisher": "room19",
   "activationEvents": [],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Ooasis requires workspace trust to access files, run terminal commands, and use workspace-configured LLM endpoints."
+    }
+  },
   "main": "./out/extension.js",
   "contributes": {
     "commands": [

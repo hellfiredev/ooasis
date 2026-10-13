@@ -66,4 +66,14 @@ suite('Configuration Settings Test Suite', () => {
     assert.strictEqual(sessionsConfig.default, 100);
     assert.strictEqual(sessionsConfig.minimum, 0);
   });
+
+  test('package.json should declare untrustedWorkspaces capability as unsupported', () => {
+    const pkgPath = path.resolve(__dirname, '../../package.json');
+    const pkgContent = fs.readFileSync(pkgPath, 'utf-8');
+    const pkg = JSON.parse(pkgContent);
+
+    assert.ok(pkg.capabilities?.untrustedWorkspaces, 'package.json should have capabilities.untrustedWorkspaces');
+    assert.strictEqual(pkg.capabilities.untrustedWorkspaces.supported, false);
+    assert.ok(typeof pkg.capabilities.untrustedWorkspaces.description === 'string');
+  });
 });
