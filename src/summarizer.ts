@@ -2,28 +2,23 @@ import { API_HOST } from './config';
 import { ChatCompletionResponse, Message, ToolResultMessage } from './types/chat';
 
 /** Threshold ratio of prompt_tokens / contextWindow to trigger summarization */
-const TOKEN_USAGE_THRESHOLD_RATIO = 0.5;
+const TOKEN_USAGE_THRESHOLD_RATIO = 0.8;
 
 
 export interface SummarizerResult {
   summary: string;
   trimmedHistory: (Message | ToolResultMessage)[];
+  totalTokens: number;
 }
 
 export class ConversationSummarizer {
   private _isSummarizing = false;
-  private _conversationSummary = '';
-
-  get summary(): string {
-    return this._conversationSummary;
-  }
 
   get isSummarizing(): boolean {
     return this._isSummarizing;
   }
 
   reset(): void {
-    this._conversationSummary = '';
     this._isSummarizing = false;
   }
 
@@ -31,29 +26,12 @@ export class ConversationSummarizer {
    * Determine whether summarization should run.
    */
   shouldSummarize(
-    promptTokens: number,
+    usedTokens: number,
     contextWindow: number,
   ): boolean {
     if (contextWindow <= 0) { return false; }
     if (this._isSummarizing) { return false; }
-    return promptTokens > contextWindow * TOKEN_USAGE_THRESHOLD_RATIO;
-  }
-
-  /**
-   * Build API messages with the summary appended to the system prompt.
-   */
-  buildMessagesWithSummary(
-    chatHistory: (Message | ToolResultMessage)[]
-  ): (Message | ToolResultMessage)[] {
-    if (!this._conversationSummary) { return [...chatHistory]; }
-
-    const messages = [...chatHistory];
-    const systemPrompt = messages[0].content as string;
-    messages[0] = {
-      ...messages[0],
-      content: `${systemPrompt}\n\n[PREVIOUS CONVERSATION SUMMARY]:\n${this._conversationSummary}`,
-    };
-    return messages;
+    return usedTokens > contextWindow * TOKEN_USAGE_THRESHOLD_RATIO;
   }
 
   /**
@@ -62,33 +40,29 @@ export class ConversationSummarizer {
   async summarize(
     chatHistory: (Message | ToolResultMessage)[],
     modelName: string,
-    signal?: AbortSignal,
-    summarizeAll = false
+    signal?: AbortSignal
   ): Promise<SummarizerResult> {
+    console.debug(`start summarize()`);
     this._isSummarizing = true;
 
     try {
       const systemPrompt = chatHistory[0];
-      const isFullSummarization = summarizeAll || !this._conversationSummary;
-
-      // In incremental mode, keep the latest user message out of the summary
-      const messagesToSummarize = isFullSummarization
-        ? chatHistory.slice(1)
-        : chatHistory.slice(1, -1);
+      // Keep the latest user message out of the summary
+      const messagesToSummarize = chatHistory.slice(1, -1);
 
       if (messagesToSummarize.length === 0) {
+        console.debug("messagesToSummarize is empty");
         return {
-          summary: this._conversationSummary,
+          summary: '',
           trimmedHistory: chatHistory,
+          totalTokens: 0
         };
       }
 
-      console.log("messagesToSummarize:", messagesToSummarize);
       const summarizeCount = messagesToSummarize.length;
       const transcript = this.buildTranscript(messagesToSummarize);
-      console.log("transcript", transcript);
+      console.log("transcript to summarize:", transcript);
       const summaryPrompt = this.buildSummaryPrompt(transcript);
-      console.log("summaryPrompt", summaryPrompt);
 
       const response = await fetch(`${API_HOST}/v1/chat/completions`, {
         method: 'POST',
@@ -110,8 +84,6 @@ export class ConversationSummarizer {
       const data = (await response.json()) as ChatCompletionResponse;
       const summaryText = data.choices[0].message.content?.trim() ?? '';
 
-      this._conversationSummary = summaryText;
-
       // Rebuild history: system prompt + messages that were not summarized
       const retainedMessages = chatHistory.slice(summarizeCount + 1);
       const trimmedHistory: (Message | ToolResultMessage)[] = [
@@ -127,7 +99,7 @@ export class ConversationSummarizer {
         ...retainedMessages,
       ];
 
-      return { summary: summaryText, trimmedHistory };
+      return { summary: summaryText, trimmedHistory, totalTokens: data.usage.total_tokens };
     } finally {
       this._isSummarizing = false;
     }

@@ -67,6 +67,7 @@ const safeSanitize = (html: string) => DOMPurify.sanitize(html, {
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [thinkingText, setThinkingText] = useState('Thinking');
   const [streamingContent, setStreamingContent] = useState('');
@@ -106,17 +107,23 @@ function App() {
           });
           break;
         case 'loadingMessage':
+          setIsGenerating(true);
           setIsThinking(true);
           setThinkingText(message.text || 'Thinking');
           break;
         case 'agentThinking':
+          setIsGenerating(true);
           setIsThinking(true);
-          setThinkingText('Thinking');
+          setThinkingText(message.text || 'Thinking');
           break;
         case 'streamToken':
+          setIsGenerating(true);
+          setIsThinking(false);
           setStreamingContent(prev => prev + message.token);
           break;
         case 'streamReasoning':
+          setIsGenerating(true);
+          setIsThinking(false);
           setStreamingReasoning(prev => prev + message.token);
           break;
         case 'toolStart':
@@ -151,6 +158,7 @@ function App() {
           }));
           break;
         case 'finalizeStream':
+          setIsGenerating(false);
           setIsThinking(false);
           setThinkingText('Thinking');
           if (message.text || message.reasoning) {
@@ -169,6 +177,7 @@ function App() {
           setStreamingReasoning('');
           break;
         case 'agentError':
+          setIsGenerating(false);
           setIsThinking(false);
           setThinkingText('Thinking');
           setMessages(prev => [
@@ -177,8 +186,6 @@ function App() {
           ]);
           break;
         case 'summaryCompleted':
-          setIsThinking(false);
-          setThinkingText('Thinking');
           setMessages(prev => [
             ...prev,
             {
@@ -190,7 +197,7 @@ function App() {
           break;
         case 'tokenUsage':
           setTokenUsage({
-            used: message.usage.prompt_tokens,
+            used: message.usage.total_tokens,
             total: message.contextWindow
           });
           break;
@@ -234,7 +241,7 @@ function App() {
     }
 
     prevMessagesRef.current = currentMessages;
-  }, [messages, streamingContent, streamingReasoning, isThinking]);
+  }, [messages, streamingContent, streamingReasoning, isThinking, isGenerating]);
 
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -283,6 +290,7 @@ function App() {
     
     setInput('');
     setAttachedFiles([]);
+    setIsGenerating(true);
     setIsThinking(true);
     setThinkingText('Thinking');
     
@@ -318,6 +326,7 @@ function App() {
     setMessages([]);
     setStreamingContent('');
     setStreamingReasoning('');
+    setIsGenerating(false);
     setIsThinking(false);
     setThinkingText('Thinking');
     setAttachedFiles([]);
@@ -389,6 +398,15 @@ function App() {
             
             {streamingContent && (
               <div className="msg-content" dangerouslySetInnerHTML={{ __html: safeSanitize(marked.parse(streamingContent) as string) }} />
+            )}
+
+            {isThinking && (
+              <div className="thinking-indicator" style={{ marginTop: '8px' }}>
+                {thinkingText}
+                <div className="thinking-dots">
+                  <span></span><span></span><span></span>
+                </div>
+              </div>
             )}
           </div>
         )}
@@ -481,7 +499,7 @@ function App() {
               }
             }}
           />
-          {isThinking ? (
+          {isGenerating ? (
             <button id="stop-button" onClick={() => vscode.postMessage({ command: 'stopGeneration' })}>Stop</button>
           ) : (
             <button id="send-button" onClick={handleSend} disabled={!input.trim() && attachedFiles.length === 0}>Send</button>

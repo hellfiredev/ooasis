@@ -24,7 +24,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private _modelInfoPromise: Promise<void>;
   private _abortController: AbortController | null = null;
   private _pendingConfirmations: Map<string, (result: boolean) => void> = new Map();
-  private _currentPromptTokens: number = 0;
+  private _totalUsedTokens: number = 0;
   private _summarizer = new ConversationSummarizer();
 
   constructor(private readonly _extensionUri: vscode.Uri) {
@@ -155,18 +155,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     
     try {
       const systemMdPath = vscode.Uri.joinPath(this._extensionUri, 'SYSTEM.md');
-      console.debug('systemMdPath', systemMdPath);
       const systemRules = await vscode.workspace.fs.readFile(systemMdPath);
-      console.debug('systemRules', systemRules)
       prompt = Buffer.from(systemRules).toString('utf-8');
-      console.debug('prompt', prompt);
     } catch {
       // Fallback: auto-generate a minimal prompt from AGENT_TOOLS
       const toolList = AGENT_TOOLS
         .map(t => `- ${t.function.name}: ${t.function.description}`)
         .join('\n');
       prompt = `You have access to the following tools:\n\n${toolList}`;
-      console.log("System prompt:", prompt);
     }
 
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -187,7 +183,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private async initializeChat() {
-    this._currentPromptTokens = 0;
+    this._totalUsedTokens = 0;
     this._summarizer.reset();
     this._chatHistory = [{
       role: 'system',
@@ -398,7 +394,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     // Check if context needs compression
     const shouldSummarize = this._summarizer.shouldSummarize(
-      this._currentPromptTokens,
+      this._totalUsedTokens,
       this._activeContextWindow,
     );
 
@@ -417,26 +413,26 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   // ─── Summarization ────────────────────────────────────────────────────────
 
-  private async performSummarization(signal?: AbortSignal, summarizeAll = false) {
+  private async performSummarization(signal?: AbortSignal, customLoadingText?: string) {
     this.postToWebview({
       command: 'loadingMessage',
-      text: 'Conversation is too long, compressing context...',
+      text: customLoadingText || 'Conversation is too long, compressing context...',
     });
 
     try {
       const result = await this._summarizer.summarize(
         this._chatHistory,
         this._modelNameDisplay,
-        signal,
-        summarizeAll
+        signal
       );
 
+      // summarized history has token usage count too
       this._chatHistory = result.trimmedHistory;
-      this._currentPromptTokens = 0; // Reset — next API call will refresh
+      this._totalUsedTokens = result.totalTokens; // Reset — next API call will refresh
 
       this.postToWebview({
         command: 'tokenUsage',
-        usage: { prompt_tokens: 0, total_tokens: 0 },
+        usage: { total_tokens: result.totalTokens || this._totalUsedTokens },
         contextWindow: this._activeContextWindow
       });
 
@@ -462,6 +458,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
     const { signal } = this._abortController;
 
+    // Track accumulated text across truncation continuations
+    let continuationBuffer = '';
+    let continuationCount = 0;
+    const MAX_CONTINUATIONS = 3;
+
     for (let iteration = 0; MAX_AGENT_ITERATIONS === -1 || iteration < MAX_AGENT_ITERATIONS; iteration++) {
       // Check if aborted before starting a new iteration
       if (signal.aborted) {
@@ -470,7 +471,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       }
 
       // Show streaming indicator
-      this.postToWebview({ command: 'agentThinking', iteration });
+      this.postToWebview({
+        command: 'agentThinking',
+        iteration,
+        text: continuationCount > 0 ? 'Continuing response...' : 'Thinking',
+      });
 
       let assistantContent = '';
       let assistantReasoning = '';
@@ -481,7 +486,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       let hasReasoning = false;
 
       try {
-        const apiMessages = this._summarizer.buildMessagesWithSummary(this._chatHistory);
+        const apiMessages = this._chatHistory;
+        console.debug("Chat history after summarized:", this._chatHistory);
 
         const response = await fetch(`${API_HOST}/v1/chat/completions`, {
           method: 'POST',
@@ -527,7 +533,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               const chunk = JSON.parse(data) as ChatCompletionChunk;
               
               if (chunk.usage) {
-                this._currentPromptTokens = chunk.usage.prompt_tokens;
+                this._totalUsedTokens = chunk.usage.total_tokens;
                 this.postToWebview({
                   command: 'tokenUsage',
                   usage: chunk.usage,
@@ -603,6 +609,70 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         });
       }
 
+      const isTruncated = finishReason === 'length' || finishReason === 'max_tokens';
+      if (isTruncated) {
+        continuationCount++;
+        continuationBuffer += assistantContent;
+
+        let reasoningTimeMs = undefined;
+        if (hasReasoning && reasoningEndTime) {
+          reasoningTimeMs = reasoningEndTime - reasoningStartTime;
+        }
+
+        if (continuationCount > MAX_CONTINUATIONS) {
+          // Too many continuations — finalize with everything accumulated so far
+          this.postToWebview({
+            command: 'finalizeStream',
+            text: continuationBuffer + '\n\n*(Response too long to continue further.)*',
+            reasoning: assistantReasoning || undefined,
+            reasoningTimeMs,
+            done: true,
+          });
+          this._chatHistory.push({
+            role: 'assistant',
+            content: continuationBuffer,
+          });
+          return;
+        }
+
+        // 1. Perform summarization first with UI thinking indicator (compresses conversation up to current user turn)
+        await this.performSummarization(signal, 'Context limit reached. Compressing context...');
+
+        if (signal.aborted) {
+          this.postToWebview({ command: 'finalizeStream', text: '*(Stopped)*', done: true });
+          return;
+        }
+
+        // 2. Push the uncompressed partial assistant response to the summarized history
+        this._chatHistory.push({
+          role: 'assistant',
+          content: assistantContent || null,
+        });
+
+        // 3. Inject a continuation prompt with strict guardrails so the model picks up where it left off
+        const trailingSnippet = assistantContent.length > 150
+          ? assistantContent.slice(-150)
+          : assistantContent;
+
+        const continuationPrompt = [
+          'Your previous response was cut off mid-stream due to output/context limits.',
+          ...(trailingSnippet ? [`Your output ended with:\n"""\n${trailingSnippet}\n"""`] : []),
+          '',
+          'STRICT CONTINUATION GUARDRAILS:',
+          '1. SEAMLESS RESUMPTION: Begin your output IMMEDIATELY with the very next character or word required to complete the thought. Do not restart the cut-off sentence, item, or section.',
+          '2. NO REPETITION OR REPHRASING: Do NOT repeat, rephrase, or summarize anything from your previous output.',
+          '3. NO META HEADERS OR FILLER: Do NOT add "(Cont.)", "(Continued)", "Here is the rest", apologies, or conversational transitions.',
+          '4. PRESERVE FORMATTING: Continue seamlessly with the exact same markdown structure, code block state, indentation, and list numbering.',
+        ].join('\n');
+
+        this._chatHistory.push({
+          role: 'user',
+          content: continuationPrompt,
+        });
+
+        continue;
+      }
+
       // Push assistant message to history
       const assistantMessage: Message = {
         role: 'assistant',
@@ -611,25 +681,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         ...(toolCalls.length > 0 && { tool_calls: toolCalls }),
       };
       this._chatHistory.push(assistantMessage);
-
-      const isTruncated = finishReason === 'length' || finishReason === 'max_tokens';
-      if (isTruncated) {
-        assistantContent += '\n\n*(Truncated due to context limit. Compressing context...)*';
-        let reasoningTimeMs = undefined;
-        if (hasReasoning && reasoningEndTime) {
-          reasoningTimeMs = reasoningEndTime - reasoningStartTime;
-        }
-        this.postToWebview({
-          command: 'finalizeStream',
-          text: assistantContent,
-          reasoning: assistantReasoning || undefined,
-          reasoningTimeMs,
-          done: true,
-        });
-
-        await this.performSummarization(signal, true);
-        return;
-      }
 
       // ── Case 1: Model wants to call tools ─────────────────────────────────
       if (toolCalls.length > 0) {
@@ -642,7 +693,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
           this.postToWebview({
             command: 'finalizeStream',
-            text: assistantContent,
+            text: continuationBuffer + assistantContent,
             reasoning: assistantReasoning,
             reasoningTimeMs
           });
@@ -692,9 +743,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         reasoningTimeMs = reasoningEndTime - reasoningStartTime;
       }
 
+      // Merge any prior continuation chunks with the final segment
+      const fullAssistantContent = continuationBuffer + assistantContent;
+
       this.postToWebview({
         command: 'finalizeStream',
-        text: assistantContent || '*(No response)*',
+        text: fullAssistantContent || '*(No response)*',
         reasoning: assistantReasoning || undefined,
         reasoningTimeMs,
         done: true,
