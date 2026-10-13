@@ -57,9 +57,10 @@ function App() {
   const [mentionStartIndex, setMentionStartIndex] = useState(-1);
   const [mentionSelectedIndex, setMentionSelectedIndex] = useState(0);
 
-  const chatContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const prevMessagesRef = useRef<ChatMessage[]>([]); // Ref to track previous messages
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef(true);
+  const prevMessagesRef = useRef<ChatMessage[]>([]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -152,13 +153,17 @@ function App() {
 
     return () => window.removeEventListener('message', handleMessage);
   }, []);
+  const handleScroll = () => {
+    if (chatContainerRef.current) {
+      const { scrollHeight, scrollTop, clientHeight } = chatContainerRef.current;
+      isNearBottomRef.current = scrollHeight - scrollTop - clientHeight < 10;
+    }
+  };
 
-  // Modified useEffect to prevent scrolling on tool call expansion/collapse
   useEffect(() => {
     const currentMessages = messages;
     const previousMessages = prevMessagesRef.current;
-
-    // Check if the change is solely due to toggling the 'open' state of a tool call
+    
     const isToolCallToggle = currentMessages.some(msg => 
       msg.toolCalls && msg.toolCalls.some(tc => {
         const prevMsg = previousMessages.find(p => p.id === msg.id);
@@ -167,19 +172,13 @@ function App() {
       })
     );
 
-    if (isToolCallToggle) {
-      // If it's just a toggle, do not scroll
-      return;
-    }
-
-    // If it's a new message or content update, scroll to bottom
-    if (chatContainerRef.current) {
+    if (!isToolCallToggle && isNearBottomRef.current && chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
 
-    // Update ref for next run
     prevMessagesRef.current = currentMessages;
   }, [messages, streamingContent, streamingReasoning, isThinking]);
+
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
@@ -281,7 +280,7 @@ function App() {
           + New Chat
         </button>
       </div>
-      <div id="chat-container" ref={chatContainerRef}>
+      <div id="chat-container" ref={chatContainerRef} onScroll={handleScroll}>
         {messages.map(msg => (
           <div key={msg.id} className={msg.role === 'user' ? 'msg-user' : 'msg-assistant'}>
             {msg.reasoning && (
