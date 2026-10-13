@@ -231,6 +231,19 @@ function App() {
     });
   };
 
+  const handleNewChat = () => {
+    vscode.postMessage({ command: 'newChat' });
+    setMessages([]);
+    setStreamingContent('');
+    setStreamingReasoning('');
+    setIsThinking(false);
+    setAttachedFiles([]);
+    setInput('');
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+    }
+  };
+
   const filteredMentionFiles = mentionVisible ? workspaceFiles.filter(f => 
     !attachedFiles.some(a => a.fsPath === f.fsPath) &&
     (f.name.toLowerCase().includes(mentionQuery.toLowerCase()) || f.relativePath.toLowerCase().includes(mentionQuery.toLowerCase()))
@@ -238,6 +251,11 @@ function App() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+      <div className="header">
+        <button className="new-chat-btn" onClick={handleNewChat} title="Start a new chat">
+          + New Chat
+        </button>
+      </div>
       <div id="chat-container" ref={chatContainerRef}>
         {messages.map(msg => (
           <div key={msg.id} className={msg.role === 'user' ? 'msg-user' : 'msg-assistant'}>

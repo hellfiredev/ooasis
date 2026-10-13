@@ -85,6 +85,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         case 'attachMentionedFile':
           await this.handleAttachMentionedFile(message.fsPath);
           break;
+        case 'newChat':
+          this._chatHistory = [{
+            role: 'system',
+            content: SYSTEM_PROMPT,
+          }];
+          break;
       }
     });
   }
