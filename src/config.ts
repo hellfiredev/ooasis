@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 
 function getRequiredConfig(configKey: string): string {
   const config = vscode.workspace.getConfiguration('ooasis');
@@ -16,20 +17,4 @@ export const MODEL_NAME = getRequiredConfig('modelName');
 export const MAX_MESSAGES = 20;
 export const KEEP_MESSAGES = 4;
 export const MAX_AGENT_ITERATIONS = 10;
-
-export const SYSTEM_PROMPT = `You are an expert local agentic coding assistant integrated into VS Code.
-
-You have access to the following tools to help users with coding tasks:
-- read_file: Read any file in the workspace
-- write_file: Create or overwrite files
-- run_terminal: Execute shell commands (builds, tests, npm scripts)
-- search_workspace: Search for text patterns across the codebase
-- list_directory: Browse the file structure
-
-## Guidelines
-- Be proactive: use tools to explore and understand the codebase before answering.
-- When asked to modify code, read the relevant file first, then write the corrected version.
-- When fixing bugs, search for related code across the workspace.
-- After writing or modifying code, run any relevant build/test commands to verify.
-- Keep responses concise. Let tool results speak for themselves.
-- Always tell the user what you're doing before calling a tool.`;
+export const SYSTEM_PROMPT = fs.readFileSync('SYSTEM.md', 'utf-8');
