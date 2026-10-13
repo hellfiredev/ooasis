@@ -24,6 +24,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private _isSummarizing = false;
   private _toolExecutor: ToolExecutor;
   private _webviewView: vscode.WebviewView | undefined;
+  private _watcher: vscode.FileSystemWatcher | undefined;
+  private _workspaceFilesTimeout: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly _extensionUri: vscode.Uri) {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -33,6 +35,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       role: 'system',
       content: SYSTEM_PROMPT,
     });
+
+    this._setupFileWatcher();
   }
 
   public resolveWebviewView(
@@ -86,6 +90,42 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   // ─── File Attachment Handling ──────────────────────────────────────────────
+
+  private _setupFileWatcher() {
+    this._watcher = vscode.workspace.createFileSystemWatcher('**/*', false, true, false);
+    
+    const isExcluded = (uri: vscode.Uri) => {
+      const path = uri.fsPath.replace(/\\/g, '/');
+      return path.includes('/node_modules/') || 
+             path.includes('/.git/') || 
+             path.includes('/out/') || 
+             path.includes('/dist/') || 
+             path.includes('/.vscode/');
+    };
+
+    this._watcher.onDidCreate((uri) => {
+      if (!isExcluded(uri)) {
+        this._triggerGetWorkspaceFiles();
+      }
+    });
+
+    this._watcher.onDidDelete((uri) => {
+      if (!isExcluded(uri)) {
+        this._triggerGetWorkspaceFiles();
+      }
+    });
+  }
+
+  private _triggerGetWorkspaceFiles() {
+    if (this._workspaceFilesTimeout) {
+      clearTimeout(this._workspaceFilesTimeout);
+    }
+    this._workspaceFilesTimeout = setTimeout(() => {
+      if (this._webviewView) {
+        this.handleGetWorkspaceFiles();
+      }
+    }, 1000);
+  }
 
   private async handleGetWorkspaceFiles() {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
