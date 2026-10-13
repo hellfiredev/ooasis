@@ -10,6 +10,7 @@
     "AI",
     "Chat"
   ],
+  "icon": "images/icon.png",
   "publisher": "room19",
   "activationEvents": [],
   "main": "./out/extension.js",
