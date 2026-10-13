@@ -92,6 +92,88 @@ body {
   word-break: break-word;
 }
 
+.user-message-wrapper {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.user-text {
+  flex: 1;
+}
+
+.edit-icon-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+  padding: 0 4px;
+}
+
+.user-message-wrapper:hover .edit-icon-btn {
+  opacity: 1;
+}
+
+.edit-icon-btn:hover {
+  color: var(--text);
+}
+
+.edit-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 250px;
+}
+
+.edit-textarea {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  resize: vertical;
+  min-height: 60px;
+  outline: none;
+}
+
+.edit-textarea:focus {
+  border-color: var(--accent);
+}
+
+.edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.edit-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--text);
+  transition: all 0.15s;
+}
+
+.edit-btn.primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+.edit-btn:hover {
+  opacity: 0.85;
+}
+
 .msg-assistant {
   align-self: flex-start;
   max-width: 95%;

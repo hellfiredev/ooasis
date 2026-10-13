@@ -66,6 +66,7 @@ interface ChatMessage {
   reasoning?: string;
   reasoningTimeMs?: number;
   toolCalls?: ToolCall[];
+  isSummary?: boolean;
 }
 
 function formatBytes(bytes: number) {
@@ -147,7 +148,7 @@ function entriesToMessages(entries: DisplayEntry[]): ChatMessage[] {
       case 'error':
         return { id: newMessageId(), role: 'assistant', content: errorHtml(entry.text) };
       case 'summary':
-        return { id: newMessageId(), role: 'assistant', content: summaryHtml(entry.text) };
+        return { id: newMessageId(), role: 'assistant', content: summaryHtml(entry.text), isSummary: true };
     }
   });
 }
@@ -178,6 +179,8 @@ function App() {
   const [tokenUsage, setTokenUsage] = useState<{ used: number, total: number } | null>(null);
   const [modelInfo, setModelInfo] = useState<{ name: string; contextWindow: number } | null>(null);
   const [confirmations, setConfirmations] = useState<ConfirmationRequest[]>([]);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editInput, setEditInput] = useState('');
 
   const [view, setView] = useState<'chat' | 'history'>('chat');
   const [sessions, setSessions] = useState<SessionMeta[] | null>(null);
@@ -462,6 +465,37 @@ function App() {
     setThinkingText('Thinking');
   };
 
+  const handleEditSave = (msgId: string, newText: string) => {
+    if (!newText.trim()) return;
+
+    // find how many user turns from the end this message is
+    let userTurnCountFromEnd = 0;
+    let found = false;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        if (messages[i].id === msgId) {
+          found = true;
+          break;
+        }
+        userTurnCountFromEnd++;
+      }
+    }
+
+    if (found) {
+      vscode.postMessage({
+        command: 'editChat',
+        text: newText,
+        countFromEnd: userTurnCountFromEnd,
+      });
+      setIsGenerating(true);
+      setIsThinking(true);
+      setThinkingText('Thinking');
+    }
+
+    setEditingMessageId(null);
+    setEditInput('');
+  };
+
   const selectMentionFile = (file: WorkspaceFileItem) => {
     const mentionText = '@' + file.name + ' ';
     const startIdx = mentionStartIndex >= 0 ? mentionStartIndex : input.lastIndexOf('@');
@@ -582,64 +616,123 @@ function App() {
         </div>
       )}
 
-      <div
-        id="chat-container"
-        ref={chatContainerRef}
-        onScroll={handleScroll}
-        style={view === 'history' ? { display: 'none' } : undefined}
-      >
-        {messages.map(msg => (
-          <div key={msg.id} className={msg.role === 'user' ? 'msg-user' : 'msg-assistant'}>
-            {msg.reasoning && (
-              <details className="msg-reasoning">
-                <summary>Thought for {msg.reasoningTimeMs ? `${(msg.reasoningTimeMs / 1000).toFixed(1)}s` : ''}</summary>
-                <div className="reasoning-body" dangerouslySetInnerHTML={{ __html: msg.reasoning }} />
-              </details>
-            )}
-            
-            {msg.content && (
-              msg.role === 'user' 
-                ? msg.content
-                : <div className="msg-content" dangerouslySetInnerHTML={{ __html: msg.content }} />
-            )}
-            
-            {msg.toolCalls && msg.toolCalls.map(tc => (
-              <div key={tc.id} className={`tool-block ${tc.open ? 'open' : ''}`}>
-                <div className="tool-header" onClick={() => {
-                  setMessages(prev => prev.map(m => 
-                    m.id === msg.id 
-                      ? { ...m, toolCalls: m.toolCalls?.map(t => t.id === tc.id ? { ...t, open: !t.open } : t) }
-                      : m
-                  ));
-                }}>
-                  <span className="tool-icon">🔧</span>
-                  <span className="tool-name">{tc.name}</span>
-                  <span className={`tool-status ${tc.status}`}>{tc.status === 'running' ? 'Running...' : 'Done'}</span>
-                </div>
-                <div className="tool-body">
-                  <div className="tool-args">{tc.args}</div>
-                  {tc.result && <div className="tool-result">{tc.result}</div>}
-                </div>
-              </div>
-            ))}
-          </div>
-        ))}
-        
-        {(streamingContent || streamingReasoning) && (
-          <div className="msg-assistant">
-            {streamingReasoning && (
-               <details className="msg-reasoning" open>
-                 <summary>Thinking</summary>
-                 <div className="reasoning-body" dangerouslySetInnerHTML={{ __html: safeSanitize(marked.parse(streamingReasoning) as string) }} />
-               </details>
-            )}
-            
-            {streamingContent && (
-              <div className="msg-content" dangerouslySetInnerHTML={{ __html: safeSanitize(marked.parse(streamingContent) as string) }} />
-            )}
+      {/* Compute summary cutoff */}
+      {(() => {
+        const lastSummaryIndex = messages.map(m => m.isSummary).lastIndexOf(true);
+        let lastUserBeforeSummaryIndex = -1;
+        if (lastSummaryIndex !== -1) {
+          for (let i = lastSummaryIndex - 1; i >= 0; i--) {
+            if (messages[i].role === 'user') {
+              lastUserBeforeSummaryIndex = i;
+              break;
+            }
+          }
+        }
 
-            {isThinking && (
-              <div className="thinking-indicator" style={{ marginTop: '8px' }}>
+        return (
+          <div
+            id="chat-container"
+            ref={chatContainerRef}
+            onScroll={handleScroll}
+            style={view === 'history' ? { display: 'none' } : undefined}
+          >
+            {messages.map((msg, index) => {
+              const isSummarized = lastSummaryIndex !== -1 && index < lastUserBeforeSummaryIndex;
+              return (
+                <div key={msg.id} className={msg.role === 'user' ? 'msg-user' : 'msg-assistant'}>
+                  {msg.reasoning && (
+                    <details className="msg-reasoning">
+                      <summary>Thought for {msg.reasoningTimeMs ? `${(msg.reasoningTimeMs / 1000).toFixed(1)}s` : ''}</summary>
+                      <div className="reasoning-body" dangerouslySetInnerHTML={{ __html: msg.reasoning }} />
+                    </details>
+                  )}
+                  
+                  {msg.content && (
+                    msg.role === 'user' ? (
+                      editingMessageId === msg.id ? (
+                        <div className="edit-container">
+                          <textarea
+                            className="edit-textarea"
+                            value={editInput}
+                            onChange={(e) => setEditInput(e.target.value)}
+                            rows={3}
+                          />
+                          <div className="edit-actions">
+                            <button className="edit-btn secondary" onClick={() => setEditingMessageId(null)}>Cancel</button>
+                            <button className="edit-btn primary" onClick={() => handleEditSave(msg.id, editInput)}>Save & Submit</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="user-message-wrapper">
+                          <div className="user-text">{msg.content}</div>
+                          {!isSummarized && !isGenerating && (
+                            <button 
+                              className="edit-icon-btn" 
+                              onClick={() => {
+                                setEditingMessageId(msg.id);
+                                setEditInput(msg.content);
+                              }}
+                              title="Edit message"
+                            >
+                              ✎
+                            </button>
+                          )}
+                        </div>
+                      )
+                    ) : (
+                      <div className="msg-content" dangerouslySetInnerHTML={{ __html: msg.content }} />
+                    )
+                  )}
+                  
+                  {msg.toolCalls && msg.toolCalls.map(tc => (
+                    <div key={tc.id} className={`tool-block ${tc.open ? 'open' : ''}`}>
+                      <div className="tool-header" onClick={() => {
+                        setMessages(prev => prev.map(m => 
+                          m.id === msg.id 
+                            ? { ...m, toolCalls: m.toolCalls?.map(t => t.id === tc.id ? { ...t, open: !t.open } : t) }
+                            : m
+                        ));
+                      }}>
+                        <span className="tool-icon">🔧</span>
+                        <span className="tool-name">{tc.name}</span>
+                        <span className={`tool-status ${tc.status}`}>{tc.status === 'running' ? 'Running...' : 'Done'}</span>
+                      </div>
+                      <div className="tool-body">
+                        <div className="tool-args">{tc.args}</div>
+                        {tc.result && <div className="tool-result">{tc.result}</div>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+            
+            {(streamingContent || streamingReasoning) && (
+              <div className="msg-assistant">
+                {streamingReasoning && (
+                   <details className="msg-reasoning" open>
+                     <summary>Thinking</summary>
+                     <div className="reasoning-body" dangerouslySetInnerHTML={{ __html: safeSanitize(marked.parse(streamingReasoning) as string) }} />
+                   </details>
+                )}
+                
+                {streamingContent && (
+                  <div className="msg-content" dangerouslySetInnerHTML={{ __html: safeSanitize(marked.parse(streamingContent) as string) }} />
+                )}
+
+                {isThinking && (
+                  <div className="thinking-indicator" style={{ marginTop: '8px' }}>
+                    {thinkingText}
+                    <div className="thinking-dots">
+                      <span></span><span></span><span></span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {isThinking && !streamingContent && !streamingReasoning && (
+              <div className="thinking-indicator">
                 {thinkingText}
                 <div className="thinking-dots">
                   <span></span><span></span><span></span>
@@ -647,17 +740,8 @@ function App() {
               </div>
             )}
           </div>
-        )}
-        
-        {isThinking && !streamingContent && !streamingReasoning && (
-          <div className="thinking-indicator">
-            {thinkingText}
-            <div className="thinking-dots">
-              <span></span><span></span><span></span>
-            </div>
-          </div>
-        )}
-      </div>
+        );
+      })()}
       
       <div id="input-area">
         {mentionVisible && filteredMentionFiles.length > 0 && (

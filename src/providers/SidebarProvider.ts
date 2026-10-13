@@ -154,6 +154,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         case 'sendChat':
           await this.handleUserMessage(message.text, message.attachments);
           break;
+        case 'editChat':
+          await this.handleEditChat(message.text, message.countFromEnd);
+          break;
         case 'getWorkspaceFiles':
           await this.handleGetWorkspaceFiles();
           break;
@@ -481,6 +484,21 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private async handleEditChat(
+    newText: string,
+    userTurnCountFromEnd: number
+  ) {
+    const turn = this._runEditTurn(newText, userTurnCountFromEnd);
+    this._currentTurn = turn;
+    try {
+      await turn;
+    } finally {
+      if (this._currentTurn === turn) {
+        this._currentTurn = null;
+      }
+    }
+  }
+
   private async _runTurn(
     text: string,
     attachments?: FileAttachment[]
@@ -519,6 +537,83 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       await this.runAgentLoop();
     } finally {
       // Persist after every turn — success, error, or stop
+      await this._saveSession();
+    }
+  }
+
+  private async _runEditTurn(newText: string, userTurnCountFromEnd: number) {
+    this._abortController = new AbortController();
+    const signal = this._abortController.signal;
+
+    // 1. Find dlIndex
+    let c = 0;
+    let dlIndex = -1;
+    for (let i = this._displayLog.entries.length - 1; i >= 0; i--) {
+      if (this._displayLog.entries[i].type === 'user') {
+        if (c === userTurnCountFromEnd) {
+          dlIndex = i;
+          break;
+        }
+        c++;
+      }
+    }
+
+    // 2. Find apiIndex
+    c = 0;
+    let apiIndex = -1;
+    for (let i = this._chatHistory.length - 1; i >= 0; i--) {
+      if (this._chatHistory[i].role === 'user') {
+        if (c === userTurnCountFromEnd) {
+          apiIndex = i;
+          break;
+        }
+        c++;
+      }
+    }
+
+    if (dlIndex === -1 || apiIndex === -1) {
+      this.postToWebview({ command: 'agentError', text: 'Error: Could not find message to edit.' });
+      return;
+    }
+
+    // 3. Extract original attachments and truncate histories
+    const originalDlMsg = this._displayLog.entries[dlIndex];
+    if (originalDlMsg.type !== 'user') return;
+    const dlAttachments = originalDlMsg.attachments;
+    this._displayLog.truncate(dlIndex);
+
+    const originalApiMsg = this._chatHistory[apiIndex];
+    const newUserContent = Array.isArray(originalApiMsg.content)
+      ? [{ type: 'text', text: newText }, ...originalApiMsg.content.slice(1)] as ContentPart[]
+      : newText;
+    this._chatHistory.splice(apiIndex);
+
+    // 4. Append new user message with preserved attachments
+    this._displayLog.addUser(newText, dlAttachments);
+    this._chatHistory.push({ role: 'user', content: newUserContent });
+
+    // 5. Check summarization
+    if (this._summarizer.shouldSummarize(this._totalUsedTokens, this._activeContextWindow)) {
+      await this.performSummarization(signal);
+    }
+    if (signal.aborted) {
+      this.postToWebview({ command: 'finalizeStream', text: '*(Stopped)*', done: true });
+      return;
+    }
+
+    // 7. Update UI
+    this.postToWebview({
+      command: 'sessionRestored',
+      sessionId: this._sessionId,
+      entries: this._displayLog.entries,
+      usage: { total_tokens: this._totalUsedTokens },
+      contextWindow: this._activeContextWindow,
+    });
+
+    // 8. Run agent loop
+    try {
+      await this.runAgentLoop();
+    } finally {
       await this._saveSession();
     }
   }

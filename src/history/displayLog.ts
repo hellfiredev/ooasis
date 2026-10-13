@@ -41,6 +41,16 @@ export class DisplayLogBuilder {
   }
 
   /**
+   * Truncates the log to the specified index.
+   * If index is 3, the resulting entries array will have length 3 (indices 0, 1, 2).
+   */
+  truncate(index: number): void {
+    if (index >= 0 && index < this._entries.length) {
+      this._entries.splice(index);
+    }
+  }
+
+  /**
    * Feed any message posted to the webview. Commands that don't affect the
    * transcript (streamToken, tokenUsage, ...) are ignored.
    */
