@@ -3,7 +3,6 @@
 src/**
 .gitignore
 .yarnrc
-vsc-extension-quickstart.md
 **/tsconfig.json
 **/eslint.config.mjs
 **/*.map
@@ -15,3 +14,8 @@ webview-ui/node_modules/**
 webview-ui/src/**
 webview-ui/public/**
 *.example
+.idea/**
+docs/**
+*.vsix
+SYSTEM.md
+*.log
