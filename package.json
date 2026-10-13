@@ -23,7 +23,7 @@
       "secondarySidebar": [
         {
           "id": "my-secondary-container",
-          "title": "My Sidebar Extension",
+          "title": "Oasis",
           "icon": "$(layout-sidebar-right)"
         }
       ]

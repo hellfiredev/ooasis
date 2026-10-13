@@ -31,6 +31,7 @@ interface ChatMessage {
   role: 'user' | 'assistant' | 'tool';
   content: string;
   reasoning?: string;
+  reasoningTimeMs?: number;
   toolCalls?: ToolCall[];
 }
 
@@ -56,8 +57,6 @@ function App() {
 
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-
-  const modelName = (window as any).MODEL_NAME || 'Unknown Model';
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -127,7 +126,8 @@ function App() {
                 id: Date.now().toString(),
                 role: 'assistant',
                 content: message.text || '',
-                reasoning: message.reasoning
+                reasoning: message.reasoning,
+                reasoningTimeMs: message.reasoningTimeMs
               }
             ]);
           }
@@ -238,19 +238,20 @@ function App() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
-      <div id="header">
-        <span id="header-title">⚡ Local AI Agent</span>
-        <span id="model-badge">{modelName}</span>
-      </div>
-      
       <div id="chat-container" ref={chatContainerRef}>
         {messages.map(msg => (
           <div key={msg.id} className={msg.role === 'user' ? 'msg-user' : 'msg-assistant'}>
             {msg.reasoning && (
               <details className="msg-reasoning">
-                <summary>Reasoning</summary>
+                <summary>Thought for {msg.reasoningTimeMs ? `${(msg.reasoningTimeMs / 1000).toFixed(1)}s` : ''}</summary>
                 <div className="reasoning-body" dangerouslySetInnerHTML={{ __html: msg.reasoning }} />
               </details>
+            )}
+
+            {msg.content && (
+              msg.role === 'user' 
+                ? msg.content
+                : <div className="msg-content" dangerouslySetInnerHTML={{ __html: msg.content }} />
             )}
 
             {msg.toolCalls && msg.toolCalls.map(tc => (
@@ -272,10 +273,6 @@ function App() {
                 </div>
               </div>
             ))}
-
-            {msg.content && (
-              <div className="msg-content" dangerouslySetInnerHTML={{ __html: msg.content }} />
-            )}
           </div>
         ))}
 
@@ -283,7 +280,7 @@ function App() {
           <div className="msg-assistant">
             {streamingReasoning && (
                <details className="msg-reasoning" open>
-                <summary>Reasoning (Streaming)</summary>
+                <summary>Thinking</summary>
                 <div className="reasoning-body">{streamingReasoning}</div>
               </details>
             )}
@@ -367,9 +364,6 @@ function App() {
             }}
           />
           <button id="send-button" onClick={handleSend} disabled={isThinking}>Send</button>
-        </div>
-        <div id="hint-row">
-          <span className="hint-text">Enter to send · Type @ to attach file</span>
         </div>
       </div>
     </div>

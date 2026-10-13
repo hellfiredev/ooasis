@@ -312,6 +312,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       let assistantReasoning = '';
       const pendingToolCalls: Map<number, ToolCall & { argumentsBuffer: string }> = new Map();
       let finishReason: string | null = null;
+      let reasoningStartTime = Date.now();
+      let reasoningEndTime: number | null = null;
+      let hasReasoning = false;
 
       try {
         const response = await fetch(`${API_HOST}/v1/chat/completions`, {
@@ -363,18 +366,21 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
               // Accumulate text content
               if (delta.content) {
+                if (hasReasoning && !reasoningEndTime) reasoningEndTime = Date.now();
                 assistantContent += delta.content;
                 this.postToWebview({ command: 'streamToken', token: delta.content });
               }
 
               // Accumulate reasoning
               if (delta.reasoning_content) {
+                hasReasoning = true;
                 assistantReasoning += delta.reasoning_content;
                 this.postToWebview({ command: 'streamReasoning', token: delta.reasoning_content });
               }
 
               // Accumulate tool calls (streaming chunks have partial data)
               if (delta.tool_calls) {
+                if (hasReasoning && !reasoningEndTime) reasoningEndTime = Date.now();
                 for (const tc of delta.tool_calls) {
                   if (!pendingToolCalls.has(tc.index)) {
                     pendingToolCalls.set(tc.index, {
@@ -394,6 +400,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               // Ignore malformed chunks
             }
           }
+        }
+        
+        if (hasReasoning && !reasoningEndTime) {
+          reasoningEndTime = Date.now();
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -426,10 +436,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         if (assistantContent || assistantReasoning) {
           const parsedContent = assistantContent ? await marked.parse(assistantContent) : '';
           const parsedReasoning = assistantReasoning ? await marked.parse(assistantReasoning) : undefined;
+          
+          let reasoningTimeMs = undefined;
+          if (hasReasoning && reasoningEndTime) {
+            reasoningTimeMs = reasoningEndTime - reasoningStartTime;
+          }
+
           this.postToWebview({
             command: 'finalizeStream',
             text: parsedContent ? DOMPurify.sanitize(parsedContent) : '',
             reasoning: parsedReasoning ? DOMPurify.sanitize(parsedReasoning) : undefined,
+            reasoningTimeMs
           });
         }
 
@@ -469,11 +486,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       // ── Case 2: Done — parse and render final response ────────────────────
       const parsedContent = assistantContent ? await marked.parse(assistantContent) : '';
       const parsedReasoning = assistantReasoning ? await marked.parse(assistantReasoning) : undefined;
+      
+      let reasoningTimeMs = undefined;
+      if (hasReasoning && reasoningEndTime) {
+        reasoningTimeMs = reasoningEndTime - reasoningStartTime;
+      }
 
       this.postToWebview({
         command: 'finalizeStream',
         text: parsedContent ? DOMPurify.sanitize(parsedContent) : '*(No response)*',
         reasoning: parsedReasoning ? DOMPurify.sanitize(parsedReasoning) : undefined,
+        reasoningTimeMs,
         done: true,
       });
 

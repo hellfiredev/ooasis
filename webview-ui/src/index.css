@@ -9,11 +9,9 @@
       --accent-fg: var(--vscode-button-foreground, #1e1e2e);
       --user-bg: var(--vscode-button-background, #89b4fa);
       --user-fg: var(--vscode-button-foreground, #1e1e2e);
-      --tool-bg: #2d2d44;
-      --tool-border: #45475a;
-      --success: #a6e3a1;
-      --warning: #f9e2af;
-      --error: #f38ba8;
+      --success: var(--vscode-testing-iconPassed, #3fb950);
+      --warning: var(--vscode-notificationsWarningIcon-foreground, #d29922);
+      --error: var(--vscode-notificationsErrorIcon-foreground, #f85149);
       --radius: 8px;
     }
 
@@ -28,33 +26,6 @@
       display: flex;
       flex-direction: column;
       overflow: hidden;
-    }
-
-    /* ── Header ── */
-    #header {
-      padding: 8px 12px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: var(--bg3);
-      flex-shrink: 0;
-    }
-    #header-title {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--text-muted);
-    }
-    #model-badge {
-      font-size: 10px;
-      padding: 2px 6px;
-      border-radius: 4px;
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      color: var(--text-muted);
-      margin-left: auto;
     }
 
     /* ── Chat container ── */
@@ -152,13 +123,13 @@
 
     /* ── Tool Call blocks ── */
     .tool-block {
-      background: var(--tool-bg);
-      border: 1px solid var(--tool-border);
+      background: var(--bg2);
+      border: 1px solid var(--vscode-editorWidget-border, color-mix(in srgb, var(--text) 25%, transparent));
       border-radius: var(--radius);
+      box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.08));
       overflow: hidden;
       font-family: var(--vscode-editor-font-family, monospace);
       font-size: 12px;
-      max-width: 95%;
       align-self: flex-start;
     }
     .tool-header {
@@ -166,21 +137,26 @@
       align-items: center;
       gap: 6px;
       padding: 6px 10px;
-      background: rgba(0,0,0,0.15);
+      background: var(--vscode-sideBarSectionHeader-background, rgba(128, 128, 128, 0.1));
       cursor: pointer;
       user-select: none;
     }
-    .tool-icon { font-size: 12px; }
-    .tool-name { font-weight: 600; color: var(--warning); }
+    .tool-block.open .tool-header {
+      border-bottom: 1px solid var(--vscode-editorWidget-border, color-mix(in srgb, var(--text) 25%, transparent));
+    }
+    .tool-icon { font-size: 12px; color: var(--text-muted); }
+    .tool-name { font-weight: 600; color: var(--text); }
     .tool-status {
       margin-left: auto;
       font-size: 10px;
-      padding: 1px 5px;
-      border-radius: 3px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid currentColor;
+      background: transparent;
     }
-    .tool-status.running { background: #f9e2af33; color: var(--warning); }
-    .tool-status.done { background: #a6e3a133; color: var(--success); }
-    .tool-status.error { background: #f38ba833; color: var(--error); }
+    .tool-status.running { color: var(--warning); }
+    .tool-status.done { color: var(--success); }
+    .tool-status.error { color: var(--error); }
     .tool-body {
       padding: 8px 10px;
       display: none;
@@ -379,13 +355,3 @@
     }
     #send-button:hover { opacity: 0.85; }
     #send-button:disabled { opacity: 0.4; cursor: not-allowed; }
-
-    #hint-row {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-    .hint-text {
-      font-size: 10px;
-      color: var(--text-muted);
-    }
