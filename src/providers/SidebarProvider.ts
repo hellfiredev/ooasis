@@ -1,8 +1,5 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { marked } from 'marked';
-import createDOMPurify from 'dompurify';
-import { JSDOM } from 'jsdom';
 import {
   ChatCompletionResponse,
   ChatCompletionChunk,
@@ -15,9 +12,6 @@ import {
 import { AGENT_TOOLS, ToolExecutor } from '../tools';
 import { API_HOST, MODEL_NAME, MAX_MESSAGES, KEEP_MESSAGES, MAX_AGENT_ITERATIONS, SYSTEM_PROMPT } from '../config';
 
-
-const window = new JSDOM('').window;
-const DOMPurify = createDOMPurify(window);
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
   private _chatHistory: (Message | ToolResultMessage)[] = [];
@@ -372,7 +366,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
               // Accumulate text content
               if (delta.content) {
-                if (hasReasoning && !reasoningEndTime) reasoningEndTime = Date.now();
+                if (hasReasoning && !reasoningEndTime) {reasoningEndTime = Date.now();}
                 assistantContent += delta.content;
                 this.postToWebview({ command: 'streamToken', token: delta.content });
               }
@@ -386,7 +380,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
               // Accumulate tool calls (streaming chunks have partial data)
               if (delta.tool_calls) {
-                if (hasReasoning && !reasoningEndTime) reasoningEndTime = Date.now();
+                if (hasReasoning && !reasoningEndTime) {reasoningEndTime = Date.now();}
                 for (const tc of delta.tool_calls) {
                   if (!pendingToolCalls.has(tc.index)) {
                     pendingToolCalls.set(tc.index, {
@@ -440,9 +434,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       if (toolCalls.length > 0) {
         // Finalize the streamed text before tool execution
         if (assistantContent || assistantReasoning) {
-          const parsedContent = assistantContent ? await marked.parse(assistantContent) : '';
-          const parsedReasoning = assistantReasoning ? await marked.parse(assistantReasoning) : undefined;
-          
           let reasoningTimeMs = undefined;
           if (hasReasoning && reasoningEndTime) {
             reasoningTimeMs = reasoningEndTime - reasoningStartTime;
@@ -450,8 +441,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
           this.postToWebview({
             command: 'finalizeStream',
-            text: parsedContent ? DOMPurify.sanitize(parsedContent) : '',
-            reasoning: parsedReasoning ? DOMPurify.sanitize(parsedReasoning) : undefined,
+            text: assistantContent,
+            reasoning: assistantReasoning,
             reasoningTimeMs
           });
         }
@@ -489,10 +480,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         continue;
       }
 
-      // ── Case 2: Done — parse and render final response ────────────────────
-      const parsedContent = assistantContent ? await marked.parse(assistantContent) : '';
-      const parsedReasoning = assistantReasoning ? await marked.parse(assistantReasoning) : undefined;
-      
       let reasoningTimeMs = undefined;
       if (hasReasoning && reasoningEndTime) {
         reasoningTimeMs = reasoningEndTime - reasoningStartTime;
@@ -500,8 +487,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
       this.postToWebview({
         command: 'finalizeStream',
-        text: parsedContent ? DOMPurify.sanitize(parsedContent) : '*(No response)*',
-        reasoning: parsedReasoning ? DOMPurify.sanitize(parsedReasoning) : undefined,
+        text: assistantContent || '*(No response)*',
+        reasoning: assistantReasoning || undefined,
         reasoningTimeMs,
         done: true,
       });

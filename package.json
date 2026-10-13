@@ -1,7 +1,7 @@
 {
-  "name": "first-extension",
-  "displayName": "first extension",
-  "description": "first extension",
+  "name": "ooasis",
+  "displayName": "ooasis",
+  "description": "AI harness that does nothing",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.136.0"
@@ -36,28 +36,46 @@
           "name": "Custom UI"
         }
       ]
+    },
+    "configuration": {
+      "title": "Ooasis",
+      "properties": {
+        "ooasis.apiHost": {
+          "type": "string",
+          "default": "http://127.0.0.1:1234",
+          "description": "The API host for the LLM."
+        },
+        "ooasis.modelName": {
+          "type": "string",
+          "default": "gemma-e4b",
+          "description": "The model name to use."
+        }
+      }
     }
   },
   "scripts": {
-    "build:webview": "cd webview-ui && npm run build",
     "vscode:prepublish": "npm run compile",
-    "compile": "npm run build:webview && tsc -p ./",
-    "watch": "tsc -watch -p ./",
+    "build:webview": "cd webview-ui && npm run build",
+    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node",
+    "esbuild": "npm run esbuild-base -- --sourcemap",
+    "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
+    "compile": "npm run build:webview && tsc --noEmit && npm run esbuild -- --minify",
+    "watch": "npm run esbuild-watch",
+    "watch:tailwind": "npx @tailwindcss/cli -i ./src/input.css -o ./out/styles.css --watch",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
-    "test": "vscode-test",
-    "watch:tailwind": "npx @tailwindcss/cli -i ./src/input.css -o ./out/styles.css --watch"
+    "test": "vscode-test"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.3.3",
-    "@types/dompurify": "^3.0.5",
-    "@types/marked": "^5.0.2",
     "@types/mocha": "^10.0.10",
     "@types/node": "24.x",
     "@types/vscode": "^1.136.0",
     "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^3.0.0",
+    "esbuild": "^0.28.2",
     "eslint": "^10.5.0",
+    "npm-run-all": "^4.1.5",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.1"
@@ -67,13 +85,7 @@
     "serialize-javascript": "^7.0.6"
   },
   "allowScripts": {
-    "@parcel/watcher@2.5.1": true
-  },
-  "dependencies": {
-    "@types/jsdom": "^30.0.0",
-    "dompurify": "^3.4.14",
-    "dotenv": "^17.4.2",
-    "jsdom": "^30.0.1",
-    "marked": "^4.3.0"
+    "@parcel/watcher@2.5.1": true,
+    "esbuild@0.28.2": true
   }
 }

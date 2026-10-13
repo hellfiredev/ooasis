@@ -1,18 +1,18 @@
-import dotenv from 'dotenv';
-import * as path from 'path';
+import * as vscode from 'vscode';
 
-dotenv.config({ path: path.join(__dirname, '../.env') });
-
-function getRequiredEnv(key: string): string {
-  const value = process.env[key];
-  if (!value || value.trim() === '') {
-    throw new Error(`Missing required environment variable: ${key}`);
+function getRequiredConfig(configKey: string): string {
+  const config = vscode.workspace.getConfiguration('ooasis');
+  const configValue = config.get<string>(configKey);
+  
+  if (configValue && configValue.trim() !== '') {
+    return configValue;
   }
-  return value;
+  
+  throw new Error(`Missing configuration. Please set ooasis.${configKey} in VS Code Settings.`);
 }
 
-export const API_HOST = getRequiredEnv('API_HOST');
-export const MODEL_NAME = getRequiredEnv('MODEL_NAME');
+export const API_HOST = getRequiredConfig('apiHost');
+export const MODEL_NAME = getRequiredConfig('modelName');
 export const MAX_MESSAGES = 20;
 export const KEEP_MESSAGES = 4;
 export const MAX_AGENT_ITERATIONS = 10;

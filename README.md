@@ -1,71 +1,79 @@
-# first-extension README
+# Ooasis - VS Code Extension
 
-This is the README for your extension "first-extension". After writing up a brief description, we recommend including the following sections.
+Ooasis is a powerful AI chat assistant directly integrated into your Visual Studio Code editor. It provides a customized conversational interface in the secondary sidebar to help you reason about your code, chat with an LLM, and build software faster.
+
+## Project Overview
+
+This project is a VS Code extension that leverages a modern web stack for its UI. It brings an intelligent chat assistant into the VS Code sidebar, offering real-time streaming of AI responses, including step-by-step reasoning and markdown rendering for code snippets.
+
+## Application Architecture
+
+The application is divided into two main parts that communicate via message passing:
+
+1. **Extension Host (Node.js)**: 
+   Runs the core extension logic in `src/`. It manages the lifecycle of the extension, handles API requests to the LLM, reads workspace context, and manages the VS Code sidebar provider (`SidebarProvider.ts`).
+2. **Webview UI (React + Vite)**: 
+   Located in the `webview-ui/` directory, this is a modern React application built with Vite and styled using Tailwind CSS. It serves as the frontend for the chat interface, handling the display of chat messages, reasoning blocks, and capturing user inputs.
 
 ## Features
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+- **Integrated Chat Interface**: Access the AI assistant directly from the secondary sidebar (Ooasis).
+- **Streaming Responses**: Real-time token streaming for fast and responsive AI replies.
+- **Reasoning Display**: Dedicated UI components for displaying the AI's internal reasoning and thought processes.
+- **Modern Web UI**: Beautiful and responsive UI powered by React and Tailwind CSS.
+- **Context-Aware**: Capable of reading active files and interacting with the VS Code workspace context.
 
-For example if there is an image subfolder under your extension project workspace:
+## Development Setup
 
-\!\[feature X\]\(images/feature-x.png\)
+To work on this extension locally, you need to install dependencies for both the extension and the webview UI.
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+### 1. Install Dependencies
 
-## Requirements
+Run the following from the root directory:
+```bash
+# Install extension dependencies
+npm install
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+# Install webview UI dependencies
+cd webview-ui
+npm install
+```
 
-## Extension Settings
+### 2. Environment Variables
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+Create a `.env` file in the root directory and add any necessary environment variables (e.g., API keys). You can copy the structure from `.env.example`.
 
-For example:
+### 3. Run for Development
 
-This extension contributes the following settings:
+1. **Start the Watchers**:
+   In your terminal, run the following commands to watch for changes in both the extension TypeScript files and the Tailwind CSS:
+   ```bash
+   npm run watch
+   npm run watch:tailwind
+   ```
+   
+2. **Launch the Extension in VS Code**:
+   - Open this project in VS Code.
+   - Press `F5` (or go to the Run and Debug view and click "Run Extension").
+   - This will open a new "Extension Development Host" window with your extension loaded. You can find the extension in the secondary sidebar.
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+*Note: For faster UI iteration without VS Code, you can also navigate to `webview-ui/` and run `npm run dev` to develop the React app in your browser.*
 
-## Known Issues
+## Building for Production
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+When you are ready to package the extension for release, follow these steps to build and package it into a `.vsix` file.
 
-## Release Notes
+### 1. Compile the Project
 
-Users appreciate release notes as you update your extension.
+This command will build the Vite React app for production (placing the optimized bundle in `webview-ui/dist/`) and compile the extension's TypeScript code.
+```bash
+npm run compile
+```
 
-### 1.0.0
+### 2. Package the Extension
 
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
----
-
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+Use `vsce` to package the extension. Make sure your `.vscodeignore` correctly ignores `webview-ui/src`, `webview-ui/node_modules`, and `webview-ui/public` so they aren't bundled.
+```bash
+npx @vscode/vsce package
+```
+This will generate a `first-extension-x.x.x.vsix` file in your root directory, which can be installed manually in VS Code or published to the Marketplace.

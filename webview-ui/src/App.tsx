@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { vscode } from './vscodeApi';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import './index.css';
 
 interface FileAttachment {
@@ -125,8 +127,8 @@ function App() {
               {
                 id: Date.now().toString(),
                 role: 'assistant',
-                content: message.text || '',
-                reasoning: message.reasoning,
+                content: message.text ? DOMPurify.sanitize(marked.parse(message.text) as string) : '',
+                reasoning: message.reasoning ? DOMPurify.sanitize(marked.parse(message.reasoning) as string) : undefined,
                 reasoningTimeMs: message.reasoningTimeMs
               }
             ]);
@@ -299,12 +301,12 @@ function App() {
             {streamingReasoning && (
                <details className="msg-reasoning" open>
                 <summary>Thinking</summary>
-                <div className="reasoning-body">{streamingReasoning}</div>
+                <div className="reasoning-body" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(streamingReasoning) as string) }} />
               </details>
             )}
 
             {streamingContent && (
-              <div className="msg-content">{streamingContent}</div>
+              <div className="msg-content" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(streamingContent) as string) }} />
             )}
           </div>
         )}
