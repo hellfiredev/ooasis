@@ -2,23 +2,18 @@
   "name": "ooasis",
   "displayName": "ooasis",
   "description": "AI harness that does nothing",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "engines": {
     "vscode": "^1.136.0"
   },
   "categories": [
-    "Other"
+    "AI",
+    "Chat"
   ],
   "publisher": "room19",
   "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
-    "commands": [
-      {
-        "command": "first-extension.helloWorld",
-        "title": "Hello World"
-      }
-    ],
     "viewsContainers": {
       "secondarySidebar": [
         {
