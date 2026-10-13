@@ -597,11 +597,13 @@ export class ToolExecutor {
   // ── helpers ────────────────────────────────────────────────────────────────
 
   private resolveWorkspacePath(relativePath: string): string {
-    if (path.isAbsolute(relativePath)) {
-      return relativePath;
+    const root = path.resolve(this._workspaceRoot ?? '.');
+    const resolved = path.resolve(root, relativePath);
+    const rel = path.relative(root, resolved);
+    if (rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) {
+      throw new Error(`Access denied: path "${relativePath}" is outside the workspace.`);
     }
-    const root = this._workspaceRoot ?? '.';
-    return path.join(root, relativePath);
+    return resolved;
   }
 
   dispose() {
