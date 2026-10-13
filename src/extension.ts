@@ -7,7 +7,9 @@ export function activate(context: vscode.ExtensionContext) {
   console.log('Local AI Agent extension activated!');
 
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider('my-custom-ui-view', provider)
+    vscode.window.registerWebviewViewProvider('my-custom-ui-view', provider, {
+      webviewOptions: { retainContextWhenHidden: true }
+    })
   );
 
   // Command: Ask AI about selected code (palette command)
