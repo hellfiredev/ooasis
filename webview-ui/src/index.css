@@ -22,7 +22,7 @@
 
 body {
   font-family: var(--vscode-font-family, -apple-system, 'Segoe UI', sans-serif);
-  font-size: var(--vscode-font-size, 13px);
+  font-size: var(--vscode-font-size, 12px);
   background: var(--bg);
   color: var(--text);
   height: 100vh;
@@ -50,7 +50,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 3px 10px;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s;
 }
@@ -86,7 +86,7 @@ body {
   padding: 8px 12px;
   border-radius: var(--radius) var(--radius) 2px var(--radius);
   max-width: 88%;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
@@ -129,7 +129,7 @@ body {
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 12px;
   transition: color 0.15s;
   padding: 0 4px;
 }
@@ -153,7 +153,7 @@ body {
   padding: 6px 8px;
   color: var(--text);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12px;
   resize: vertical;
   min-height: 60px;
   outline: none;
@@ -174,7 +174,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 4px 10px;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
   color: var(--text);
   transition: all 0.15s;
@@ -226,7 +226,7 @@ body {
 
 .summary-block strong {
   color: var(--accent);
-  font-size: 13px;
+  font-size: 12px;
   display: block;
   margin-bottom: 6px;
 }
@@ -237,61 +237,83 @@ body {
 .msg-reasoning {
   border-left: 2px solid var(--border);
   padding: 4px 10px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
-  font-style: italic;
-  cursor: pointer;
-  user-select: none;
 }
 
 .msg-reasoning summary {
-  font-style: normal;
   font-weight: 600;
   color: var(--text-muted);
   list-style: none;
   display: flex;
   align-items: center;
   gap: 4px;
+  cursor: pointer;
+  user-select: none;
 }
 
-.msg-reasoning summary::before { content: '▶'; font-size: 9px; }
-.msg-reasoning[open] summary::before { content: '▼'; }
-.msg-reasoning .reasoning-body { margin-top: 4px; font-style: italic; }
+.msg-reasoning .reasoning-body {
+  margin-top: 4px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  user-select: text;
+  cursor: auto;
+}
 
 
 /* ── Markdown prose ────────────────────────── */
 
 .msg-content h1,
 .msg-content h2,
-.msg-content h3 {
-  font-size: 1em;
+.msg-content h3,
+.reasoning-body h1,
+.reasoning-body h2,
+.reasoning-body h3 {
+  font-size: 12px;
   font-weight: 600;
   margin: 6px 0 4px;
 }
 
-.msg-content p { margin: 4px 0; }
+.msg-content p,
+.reasoning-body p { margin: 4px 0; }
 
-.msg-content code {
+.msg-content code,
+.reasoning-body code {
   font-family: var(--font-mono);
   font-size: 12px;
   background: var(--bg-deep);
   padding: 1px 4px;
   border-radius: 3px;
+  font-style: normal;
 }
 
-.msg-content pre {
+.msg-content pre,
+.reasoning-body pre {
   background: var(--bg-deep);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 8px 10px;
   overflow-x: auto;
   margin: 6px 0;
+  font-style: normal;
 }
 
-.msg-content pre code { background: none; padding: 0; }
-.msg-content ul, .msg-content ol { padding-left: 18px; margin: 4px 0; }
-.msg-content li { margin: 2px 0; }
-.msg-content a { color: var(--accent); }
+.msg-content pre code,
+.reasoning-body pre code { background: none; padding: 0; }
+.msg-content ul, .msg-content ol,
+.reasoning-body ul, .reasoning-body ol { padding-left: 18px; margin: 4px 0; }
+.msg-content li,
+.reasoning-body li { margin: 2px 0; }
+.msg-content a,
+.reasoning-body a { color: var(--accent); }
+
+.msg-content blockquote,
+.reasoning-body blockquote {
+  border-left: 2px solid var(--border);
+  margin: 4px 0;
+  padding-left: 8px;
+  color: var(--text-muted);
+}
 
 .msg-content .error {
   color: var(--error);
@@ -301,55 +323,56 @@ body {
 /* ── Tool Call blocks ──────────────────────── */
 
 .tool-block {
-  background: var(--bg);
+  background: var(--bg-hover);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  overflow: hidden;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11px;
   align-self: flex-start;
-}
-
-.tool-header {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
+  padding: 3px 8px;
+  margin: 4px 0;
+  max-width: 100%;
+}
+
+.tool-name {
+  font-weight: 600;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.tool-target {
+  color: var(--text-muted);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-target.tool-file {
+  color: var(--accent);
   cursor: pointer;
-  user-select: none;
 }
 
-.tool-block.open .tool-header {
-  border-bottom: 1px solid var(--border);
+.tool-target.tool-file:hover {
+  color: var(--text);
+  filter: brightness(1.2);
 }
-
-.tool-icon { font-size: 12px; color: var(--text-muted); }
-.tool-name { font-weight: 600; color: var(--text); }
 
 .tool-status {
-  margin-left: auto;
   font-size: 10px;
-  padding: 1px 6px;
+  padding: 1px 5px;
   border-radius: 3px;
   border: 1px solid currentColor;
   background: transparent;
+  flex-shrink: 0;
 }
 
 .tool-status.running { color: var(--warning); }
 .tool-status.done { color: var(--success); }
 .tool-status.error { color: var(--error); }
-
-.tool-body {
-  padding: 8px 10px;
-  display: none;
-  max-height: 250px;
-  overflow-y: auto;
-}
-
-.tool-block.open .tool-body { display: block; }
-
-.tool-args { color: var(--text-muted); margin-bottom: 6px; word-break: break-all; }
-.tool-result { color: var(--text); white-space: pre-wrap; word-break: break-word; }
 
 
 /* ── Thinking indicator ────────────────────── */
@@ -410,7 +433,7 @@ body {
   padding: 7px 10px;
   color: var(--text);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12px;
   resize: none;
   min-height: 36px;
   max-height: 120px;
@@ -463,7 +486,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
   padding: 2px 8px 0;
 }
@@ -571,7 +594,7 @@ body {
 
 .mention-item.attached .mention-check {
   color: var(--accent);
-  font-size: 11px;
+  font-size: 12px;
   flex-shrink: 0;
 }
 
@@ -583,13 +606,13 @@ body {
 
 .mention-item .mention-icon { font-size: 12px; flex-shrink: 0; }
 .mention-item .mention-name {
-  font-weight: 600;
+  font-weight: 500;
   font-family: var(--font-mono);
   flex-shrink: 0;
 }
 
 .mention-item .mention-path {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -626,7 +649,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 3px 8px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text);
 }
 
@@ -636,19 +659,19 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .attachment-chip .chip-size {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .attachment-chip .chip-remove {
   cursor: pointer;
   color: var(--text-muted);
   margin-left: 2px;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1;
   border: none;
   background: transparent;
@@ -688,14 +711,14 @@ body {
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   transition: color 0.15s;
 }
 .history-back:hover { color: var(--text); }
 
 .history-title {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -742,7 +765,7 @@ body {
 }
 
 .history-item-title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -751,7 +774,7 @@ body {
 }
 
 .history-meta {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
 }
 .history-current {
@@ -776,7 +799,7 @@ body {
   cursor: pointer;
   padding: 4px;
   border-radius: 3px;
-  font-size: 14px;
+  font-size: 12px;
   display: flex;
   align-items: center;
   justify-content: center;

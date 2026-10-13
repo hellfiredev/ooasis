@@ -56,7 +56,7 @@ suite('DisplayLogBuilder Test Suite', () => {
     builder.apply({ 
       command: 'toolStart', 
       toolCallId: 'call_1', 
-      toolName: 'myTool', 
+      toolName: 'run_terminal', 
       args: '{"foo": "bar"}' 
     });
     
@@ -78,5 +78,43 @@ suite('DisplayLogBuilder Test Suite', () => {
      
     tc = (log[0] as any).toolCalls;
     assert.strictEqual(tc[0].result, 'Success!');
+  });
+
+  test('should not store result for tools with hidden output', () => {
+    builder.apply({ command: 'finalizeStream', text: 'Hi' });
+    builder.apply({ command: 'toolStart', toolCallId: 'call_1', toolName: 'read_file', args: '{}' });
+    builder.apply({ command: 'toolResult', toolCallId: 'call_1', result: 'secret file contents' });
+
+    const tc = (builder.entries[0] as any).toolCalls;
+    assert.strictEqual(tc[0].result, undefined);
+  });
+
+  test('should leave result undefined when toolResult carries no result', () => {
+    builder.apply({ command: 'finalizeStream', text: 'Hi' });
+    builder.apply({ command: 'toolStart', toolCallId: 'call_1', toolName: 'read_file', args: '{}' });
+    builder.apply({ command: 'toolResult', toolCallId: 'call_1' });
+
+    const tc = (builder.entries[0] as any).toolCalls;
+    assert.strictEqual(tc[0].result, undefined);
+  });
+
+  test('should strip legacy results of hidden tools when loading, keep run_terminal', () => {
+    const legacy: DisplayEntry[] = [
+      {
+        type: 'assistant',
+        text: '',
+        timestamp: 1,
+        toolCalls: [
+          { id: 'a', name: 'read_file', args: '{}', result: 'file contents' },
+          { id: 'b', name: 'run_terminal', args: '{}', result: 'STDOUT: ok' },
+        ],
+      },
+    ];
+    const b = new DisplayLogBuilder(legacy);
+    const tcs = (b.entries[0] as any).toolCalls;
+    assert.strictEqual(tcs[0].result, undefined);
+    assert.strictEqual(tcs[1].result, 'STDOUT: ok');
+    // Caller's array is not mutated
+    assert.strictEqual((legacy[0] as any).toolCalls[0].result, 'file contents');
   });
 });

@@ -27,9 +27,9 @@ suite('MarkdownExport Test Suite', () => {
           toolCalls: [
             {
               id: 'tool_1',
-              name: 'calculator',
-              args: '{"expr": "1+1"}',
-              result: '2'
+              name: 'run_terminal',
+              args: '{"command": "echo hi"}',
+              result: 'TERMINAL_OUTPUT_MARKER'
             }
           ]
         }
@@ -45,9 +45,37 @@ suite('MarkdownExport Test Suite', () => {
     assert.ok(markdown.includes('Hi there!'), 'Should contain assistant message');
     assert.ok(markdown.includes('<details><summary>Reasoning</summary>'), 'Should contain reasoning dropdown');
     assert.ok(markdown.includes('I should say hello back.'), 'Should contain reasoning text');
-    assert.ok(markdown.includes('<summary>🔧 calculator</summary>'), 'Should contain tool call heading');
-    assert.ok(markdown.includes('"expr": "1+1"'), 'Should contain tool args');
-    assert.ok(markdown.includes('2'), 'Should contain tool result');
+    assert.ok(markdown.includes('<summary>run_terminal</summary>'), 'Should contain tool call heading');
+    assert.ok(markdown.includes('"command": "echo hi"'), 'Should contain tool args');
+    assert.ok(markdown.includes('TERMINAL_OUTPUT_MARKER'), 'Should contain run_terminal result');
+  });
+
+  test('should omit result for tools with hidden output', () => {
+    const session: SessionFile = {
+      id: 'hidden-output',
+      title: 'Hidden',
+      createdAt: 0,
+      updatedAt: 0,
+      messageCount: 1,
+      version: 1,
+      totalUsedTokens: 0,
+      apiHistory: [],
+      displayLog: [
+        {
+          type: 'assistant',
+          text: '',
+          timestamp: 1,
+          toolCalls: [
+            { id: 't1', name: 'read_file', args: '{"path": "a.ts"}', result: 'FILE_CONTENT_MARKER' },
+          ],
+        },
+      ],
+    };
+
+    const markdown = sessionToMarkdown(session);
+    assert.ok(markdown.includes('<summary>read_file</summary>'), 'Should contain tool call heading');
+    assert.ok(markdown.includes('"path": "a.ts"'), 'Should contain tool args');
+    assert.ok(!markdown.includes('FILE_CONTENT_MARKER'), 'Should not contain read_file result');
   });
 
   test('should handle empty session gracefully', () => {

@@ -2,6 +2,7 @@ import {
   DisplayAssistantEntry,
   DisplayEntry,
 } from '../types/chat';
+import { shouldShowToolOutput } from './toolVisibility';
 
 /**
  * Builds a human-readable, raw-markdown transcript of a conversation by
@@ -15,10 +16,18 @@ export class DisplayLogBuilder {
   private _entries: DisplayEntry[];
 
   constructor(initial: DisplayEntry[] = []) {
-    // Deep-ish copy so mutations (tool results) never touch the caller's array
+    // Deep-ish copy so mutations (tool results) never touch the caller's array.
+    // Legacy sessions may contain output for tools whose output is now hidden; drop it.
     this._entries = initial.map((e) =>
       e.type === 'assistant' && e.toolCalls
-        ? { ...e, toolCalls: e.toolCalls.map((tc) => ({ ...tc })) }
+        ? {
+            ...e,
+            toolCalls: e.toolCalls.map((tc) => {
+              const copy = { ...tc };
+              if (!shouldShowToolOutput(copy.name)) { delete copy.result; }
+              return copy;
+            }),
+          }
         : { ...e }
     );
   }
@@ -93,11 +102,12 @@ export class DisplayLogBuilder {
 
       case 'toolResult': {
         const id = String(msg.toolCallId ?? '');
-        const result = String(msg.result ?? '');
+        if (typeof msg.result !== 'string') { return; }
+        const result = msg.result;
         for (const entry of this._entries) {
           if (entry.type !== 'assistant' || !entry.toolCalls) { continue; }
           for (const tc of entry.toolCalls) {
-            if (tc.id === id) { tc.result = result; }
+            if (tc.id === id && shouldShowToolOutput(tc.name)) { tc.result = result; }
           }
         }
         return;

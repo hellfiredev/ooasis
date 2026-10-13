@@ -1,4 +1,5 @@
 import { DisplayEntry, SessionFile } from '../types/chat';
+import { shouldShowToolOutput } from './toolVisibility';
 
 export const TOOL_RESULT_MAX_CHARS = 2000;
 
@@ -55,8 +56,8 @@ function entryToMarkdown(entry: DisplayEntry): string {
         parts.push(entry.text);
       }
       for (const tc of entry.toolCalls ?? []) {
-        let block = `<details><summary>🔧 ${tc.name}</summary>\n\n${fence(prettyArgs(tc.args), 'json')}`;
-        if (tc.result !== undefined) {
+        let block = `<details><summary>${tc.name}</summary>\n\n${fence(prettyArgs(tc.args), 'json')}`;
+        if (tc.result !== undefined && shouldShowToolOutput(tc.name)) {
           block += `\n\n${fence(truncate(tc.result, TOOL_RESULT_MAX_CHARS), 'text')}`;
         }
         block += '\n\n</details>';

@@ -23,6 +23,7 @@ import {
   makeSessionTitle,
 } from '../history/sessionStore';
 import { sessionToMarkdown } from '../history/markdownExport';
+import { shouldShowToolOutput } from '../history/toolVisibility';
 
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
@@ -165,6 +166,21 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           break;
         case 'attachMentionedFile':
           await this.handleAttachMentionedFile(message.fsPath);
+          break;
+        case 'openFile':
+          if (typeof message.path === 'string' && message.path) {
+            const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            const absPath = path.isAbsolute(message.path)
+              ? message.path
+              : (workspaceRoot ? path.join(workspaceRoot, message.path) : message.path);
+            try {
+              const uri = vscode.Uri.file(absPath);
+              const doc = await vscode.workspace.openTextDocument(uri);
+              await vscode.window.showTextDocument(doc, { preview: true, preserveFocus: false });
+            } catch {
+              vscode.window.showErrorMessage(`Could not open file: ${message.path}`);
+            }
+          }
           break;
         case 'newChat':
           await this._stopAndWait();
@@ -998,10 +1014,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
           const result = await this._toolExecutor.execute(tc.function.name, tc.function.arguments);
 
+          // Only run_terminal output is surfaced in the UI / saved log; the model
+          // still receives the full result via toolResultMessages below.
           this.postToWebview({
             command: 'toolResult',
             toolCallId: tc.id,
-            result,
+            ...(shouldShowToolOutput(tc.function.name) && { result }),
           });
 
           toolResultMessages.push({
@@ -1139,7 +1157,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     this.postToWebview({
       command: 'sessionRestored',
       sessionId: session.id,
-      entries: session.displayLog,
+      entries: this._displayLog.entries,
       usage: { total_tokens: this._totalUsedTokens },
       contextWindow: this._activeContextWindow,
     });

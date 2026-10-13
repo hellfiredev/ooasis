@@ -82,6 +82,30 @@ function formatK(num: number) {
   return num.toString();
 }
 
+function parseToolTarget(argsJson: string): { target: string; isFile: boolean; fullPath?: string } {
+  try {
+    const args = JSON.parse(argsJson);
+    if (args && typeof args === 'object') {
+      if (typeof args.path === 'string' && args.path) {
+        const fullPath = args.path;
+        const normalized = fullPath.replace(/\\/g, '/');
+        const segments = normalized.split('/').filter(Boolean);
+        const fileName = segments[segments.length - 1] || fullPath;
+        return { target: fileName, isFile: true, fullPath };
+      }
+      if (typeof args.command === 'string' && args.command) {
+        return { target: args.command, isFile: false };
+      }
+      if (typeof args.query === 'string' && args.query) {
+        return { target: args.query, isFile: false };
+      }
+    }
+  } catch {
+    // If not valid JSON, ignore
+  }
+  return { target: '', isFile: false };
+}
+
 interface ConfirmationRequest {
   id: string;
   text: string;
@@ -594,7 +618,7 @@ function App() {
       {view === 'history' && (
         <div className="history-view">
           <div className="history-header">
-            <button className="history-back" onClick={() => setView('chat')} title="Back to chat">← Back</button>
+            <button className="history-back" onClick={() => setView('chat')} title="Back to chat">Back</button>
             <span className="history-title">Saved conversations</span>
           </div>
           {sessions === null ? (
@@ -625,7 +649,7 @@ function App() {
                         e.stopPropagation();
                         vscode.postMessage({ command: 'exportSession', id: s.id });
                       }}
-                    >⤓</button>
+                    >Export</button>
                     <button
                       className="history-action delete"
                       title="Delete conversation"
@@ -633,7 +657,7 @@ function App() {
                         e.stopPropagation();
                         vscode.postMessage({ command: 'deleteSession', id: s.id });
                       }}
-                    >🗑</button>
+                    >Delete</button>
                   </div>
                 </div>
               ))}
@@ -699,16 +723,14 @@ function App() {
                                   setEditingMessageId(msg.id);
                                   setEditInput(msg.content);
                                 }}
-                                title="Edit message"
                               >
-                                ✎
+                                Edit
                               </button>
                               <button 
                                 className="msg-action-btn" 
                                 onClick={() => handleRegenerate(msg.id)}
-                                title="Regenerate response"
                               >
-                                ↻
+                                Retry
                               </button>
                             </div>
                           )}
@@ -719,25 +741,36 @@ function App() {
                     )
                   )}
                   
-                  {msg.toolCalls && msg.toolCalls.map(tc => (
-                    <div key={tc.id} className={`tool-block ${tc.open ? 'open' : ''}`}>
-                      <div className="tool-header" onClick={() => {
-                        setMessages(prev => prev.map(m => 
-                          m.id === msg.id 
-                            ? { ...m, toolCalls: m.toolCalls?.map(t => t.id === tc.id ? { ...t, open: !t.open } : t) }
-                            : m
-                        ));
-                      }}>
-                        <span className="tool-icon">🔧</span>
+                  {msg.toolCalls && msg.toolCalls.map(tc => {
+                    const targetInfo = parseToolTarget(tc.args);
+                    return (
+                      <div key={tc.id} className="tool-block">
                         <span className="tool-name">{tc.name}</span>
-                        <span className={`tool-status ${tc.status}`}>{tc.status === 'running' ? 'Running...' : 'Done'}</span>
+                        {targetInfo.target && (
+                          targetInfo.isFile ? (
+                            <span 
+                              className="tool-target tool-file" 
+                              title={targetInfo.fullPath}
+                              onClick={() => {
+                                if (targetInfo.fullPath) {
+                                  vscode.postMessage({ command: 'openFile', path: targetInfo.fullPath });
+                                }
+                              }}
+                            >
+                              {targetInfo.target}
+                            </span>
+                          ) : (
+                            <span className="tool-target" title={targetInfo.target}>
+                              {targetInfo.target}
+                            </span>
+                          )
+                        )}
+                        <span className={`tool-status ${tc.status}`}>
+                          {tc.status === 'running' ? 'running' : 'done'}
+                        </span>
                       </div>
-                      <div className="tool-body">
-                        <div className="tool-args">{tc.args}</div>
-                        {tc.result && <div className="tool-result">{tc.result}</div>}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               );
             })}
@@ -787,7 +820,6 @@ function App() {
                 className={`mention-item ${idx === mentionSelectedIndex ? 'active' : ''}`}
                 onClick={() => selectMentionFile(file)}
               >
-                <span className="mention-icon">📄</span>
                 <span className="mention-name">{file.name}</span>
                 <span className="mention-path">{file.relativePath}</span>
               </div>
@@ -799,7 +831,6 @@ function App() {
           <div id="attachments-tray" style={{ display: 'flex' }}>
             {attachedFiles.map(file => (
               <div key={file.id} className="attachment-chip">
-                <span>{file.name.toLowerCase().endsWith('.pdf') ? '📕' : file.isBinary ? '📦' : '📄'}</span>
                 <span className="chip-name">{file.name}</span>
                 <span className="chip-size">{formatBytes(file.size)}</span>
               </div>
