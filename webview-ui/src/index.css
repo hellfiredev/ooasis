@@ -318,6 +318,22 @@ body {
 #send-button:hover { opacity: 0.85; }
 #send-button:disabled { opacity: 0.4; cursor: not-allowed; }
 
+#stop-button {
+  background: var(--error);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  height: 36px;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+
+#stop-button:hover { opacity: 0.85; }
+
 
 /* ── Footer info ───────────────────────────── */
 

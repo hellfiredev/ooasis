@@ -155,7 +155,10 @@ function App() {
           ]);
           break;
         case 'tokenUsage':
-          setTokenUsage({ used: message.usage.total_tokens, total: message.contextWindow });
+          setTokenUsage({
+            used: message.usage.total_tokens,
+            total: message.contextWindow
+          });
           break;
         case 'modelInfo':
           setModelInfo(message.info);
@@ -280,7 +283,7 @@ function App() {
     setIsThinking(false);
     setAttachedFiles([]);
     setInput('');
-    setTokenUsage(null);
+    setTokenUsage(prev => prev ? { used: 0, total: prev.total } : null);
     if (inputRef.current) {
       inputRef.current.style.height = 'auto';
     }
@@ -423,7 +426,11 @@ function App() {
               }
             }}
           />
-          <button id="send-button" onClick={handleSend} disabled={isThinking}>Send</button>
+          {isThinking ? (
+            <button id="stop-button" onClick={() => vscode.postMessage({ command: 'stopGeneration' })}>Stop</button>
+          ) : (
+            <button id="send-button" onClick={handleSend} disabled={!input.trim() && attachedFiles.length === 0}>Send</button>
+          )}
         </div>
 
         {(modelInfo || tokenUsage) && (

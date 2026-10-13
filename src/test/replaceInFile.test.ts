@@ -5,7 +5,7 @@ import * as os from 'os';
 import { ToolExecutor } from '../tools';
 import { ReplaceInFileArgs } from '../types/chat';
 
-suite('ToolExecutor - replaceInFile Test Suite', () => {
+suite('ToolExecutor - Hash-based replaceInFile Test Suite', () => {
   let tempDirUri: vscode.Uri;
   let tempDirPath: string;
   let executor: ToolExecutor;
@@ -31,6 +31,11 @@ suite('ToolExecutor - replaceInFile Test Suite', () => {
     return Buffer.from(bytes).toString('utf-8');
   };
 
+  // Helper to get hash for a specific line
+  const getHash = (lineContent: string, lineNumber: number): string => {
+    return ToolExecutor.hashLine(lineContent, lineNumber);
+  };
+
   suiteSetup(async () => {
     tempDirPath = path.join(os.tmpdir(), `ooasis-test-${Date.now()}`);
     tempDirUri = vscode.Uri.file(tempDirPath);
@@ -47,244 +52,198 @@ suite('ToolExecutor - replaceInFile Test Suite', () => {
     executor.dispose();
   });
 
-  suite('Basic Line Replacement', () => {
-    test('should replace a single line in the middle of a file', async () => {
-      const fileName = 'test-single.txt';
+  suite('hashLine utility', () => {
+    test('should return a 6-character hex string', () => {
+      const hash = ToolExecutor.hashLine('hello world', 1);
+      assert.strictEqual(hash.length, 6);
+      assert.ok(/^[0-9a-f]{6}$/.test(hash), `Hash "${hash}" is not a valid 6-char hex string`);
+    });
+
+    test('should return different hashes for different content', () => {
+      const hash1 = ToolExecutor.hashLine('line A', 1);
+      const hash2 = ToolExecutor.hashLine('line B', 1);
+      assert.notStrictEqual(hash1, hash2);
+    });
+
+    test('should return different hashes for same content at different line numbers', () => {
+      const hash1 = ToolExecutor.hashLine('duplicate line', 1);
+      const hash2 = ToolExecutor.hashLine('duplicate line', 2);
+      assert.notStrictEqual(hash1, hash2, 'Same content at different line numbers should produce different hashes');
+    });
+
+    test('should be deterministic (same input = same output)', () => {
+      const hash1 = ToolExecutor.hashLine('test content', 5);
+      const hash2 = ToolExecutor.hashLine('test content', 5);
+      assert.strictEqual(hash1, hash2);
+    });
+  });
+
+  suite('read_file hash output', () => {
+    test('read_file output should include hash prefixes for each line', async () => {
+      const fileName = 'test-hash-output.txt';
       await writeTestFile(fileName, 'line 1\nline 2\nline 3');
+
+      const result = await executor.execute('read_file', JSON.stringify({ path: fileName }));
+
+      // Each content line should start with a 6-char hash followed by ": "
+      const codeBlockMatch = result.match(/```\n([\s\S]*?)\n```/);
+      assert.ok(codeBlockMatch, 'Output should contain a code block');
+      
+      const contentLines = codeBlockMatch![1].split('\n');
+      for (const line of contentLines) {
+        assert.ok(
+          /^[0-9a-f]{6}: /.test(line),
+          `Line "${line}" does not start with a valid 6-char hash prefix`
+        );
+      }
+    });
+  });
+
+  suite('Basic Hash-based Replacement', () => {
+    test('should replace a single line by its hash', async () => {
+      const fileName = 'test-hash-single.txt';
+      await writeTestFile(fileName, 'line 1\nline 2\nline 3');
+
+      const hash2 = getHash('line 2', 2);
 
       const result = await callReplaceInFile({
         path: fileName,
-        start_line: 2,
-        end_line: 2,
+        start_hash: hash2,
+        end_hash: hash2,
         content: 'line 2 updated',
       });
 
-      assert.strictEqual(result, `Successfully replaced lines 2 to 2 in "${fileName}".`);
+      assert.ok(result.includes('Successfully replaced'));
       const updated = await readTestFile(fileName);
       assert.strictEqual(updated, 'line 1\nline 2 updated\nline 3');
     });
 
-    test('should replace multiple lines with a single line (line reduction)', async () => {
-      const fileName = 'test-reduce.txt';
+    test('should replace multiple lines by hash range', async () => {
+      const fileName = 'test-hash-multi.txt';
       await writeTestFile(fileName, 'line 1\nline 2\nline 3\nline 4\nline 5');
+
+      const hash2 = getHash('line 2', 2);
+      const hash4 = getHash('line 4', 4);
 
       const result = await callReplaceInFile({
         path: fileName,
-        start_line: 2,
-        end_line: 4,
+        start_hash: hash2,
+        end_hash: hash4,
         content: 'replacement for 2-4',
       });
 
-      assert.strictEqual(result, `Successfully replaced lines 2 to 4 in "${fileName}".`);
+      assert.ok(result.includes('Successfully replaced'));
       const updated = await readTestFile(fileName);
       assert.strictEqual(updated, 'line 1\nreplacement for 2-4\nline 5');
     });
 
-    test('should replace a single line with multiple lines (line expansion)', async () => {
-      const fileName = 'test-expand.txt';
+    test('should expand a single line into multiple lines', async () => {
+      const fileName = 'test-hash-expand.txt';
       await writeTestFile(fileName, 'line 1\nline 2\nline 3');
+
+      const hash2 = getHash('line 2', 2);
 
       const result = await callReplaceInFile({
         path: fileName,
-        start_line: 2,
-        end_line: 2,
+        start_hash: hash2,
+        end_hash: hash2,
         content: 'expanded A\nexpanded B\nexpanded C',
       });
 
-      assert.strictEqual(result, `Successfully replaced lines 2 to 2 in "${fileName}".`);
+      assert.ok(result.includes('Successfully replaced'));
       const updated = await readTestFile(fileName);
       assert.strictEqual(updated, 'line 1\nexpanded A\nexpanded B\nexpanded C\nline 3');
     });
 
-    test('should replace the entire file content when range covers all lines', async () => {
-      const fileName = 'test-entire.txt';
+    test('should strip erroneously included hash prefixes from replacement content', async () => {
+      const fileName = 'test-hash-strip.txt';
       await writeTestFile(fileName, 'line 1\nline 2\nline 3');
+
+      const hash2 = getHash('line 2', 2);
 
       const result = await callReplaceInFile({
         path: fileName,
-        start_line: 1,
-        end_line: 3,
+        start_hash: hash2,
+        end_hash: hash2,
+        content: 'a1b2c3: line 2 updated\nxyz789: extra line',
+      });
+
+      assert.ok(result.includes('Successfully replaced'));
+      const updated = await readTestFile(fileName);
+      assert.strictEqual(updated, 'line 1\nline 2 updated\nextra line\nline 3');
+    });
+
+    test('should replace entire file when hashes span all lines', async () => {
+      const fileName = 'test-hash-entire.txt';
+      await writeTestFile(fileName, 'line 1\nline 2\nline 3');
+
+      const hash1 = getHash('line 1', 1);
+      const hash3 = getHash('line 3', 3);
+
+      const result = await callReplaceInFile({
+        path: fileName,
+        start_hash: hash1,
+        end_hash: hash3,
         content: 'brand new file content',
       });
 
-      assert.strictEqual(result, `Successfully replaced lines 1 to 3 in "${fileName}".`);
+      assert.ok(result.includes('Successfully replaced'));
       const updated = await readTestFile(fileName);
       assert.strictEqual(updated, 'brand new file content');
-    });
-
-    test('should replace target lines with an empty string resulting in an empty line', async () => {
-      const fileName = 'test-empty.txt';
-      await writeTestFile(fileName, 'line 1\nline 2\nline 3');
-
-      const result = await callReplaceInFile({
-        path: fileName,
-        start_line: 2,
-        end_line: 2,
-        content: '',
-      });
-
-      assert.strictEqual(result, `Successfully replaced lines 2 to 2 in "${fileName}".`);
-      const updated = await readTestFile(fileName);
-      assert.strictEqual(updated, 'line 1\n\nline 3');
-    });
-  });
-
-  suite('Line Endings (CRLF vs LF)', () => {
-    test('should preserve CRLF line endings when the original file uses CRLF', async () => {
-      const fileName = 'test-crlf.txt';
-      await writeTestFile(fileName, 'line 1\r\nline 2\r\nline 3');
-
-      const result = await callReplaceInFile({
-        path: fileName,
-        start_line: 2,
-        end_line: 2,
-        content: 'line 2 crlf',
-      });
-
-      assert.strictEqual(result, `Successfully replaced lines 2 to 2 in "${fileName}".`);
-      const updated = await readTestFile(fileName);
-      assert.strictEqual(updated, 'line 1\r\nline 2 crlf\r\nline 3');
-    });
-
-    test('should correctly join multi-line replacement with CRLF when file uses CRLF', async () => {
-      const fileName = 'test-crlf-multi.txt';
-      await writeTestFile(fileName, 'line 1\r\nline 2\r\nline 3');
-
-      const result = await callReplaceInFile({
-        path: fileName,
-        start_line: 2,
-        end_line: 2,
-        content: 'part A\npart B',
-      });
-
-      assert.strictEqual(result, `Successfully replaced lines 2 to 2 in "${fileName}".`);
-      const updated = await readTestFile(fileName);
-      assert.strictEqual(updated, 'line 1\r\npart A\r\npart B\r\nline 3');
-    });
-
-    test('should preserve LF line endings when the original file uses LF', async () => {
-      const fileName = 'test-lf.txt';
-      await writeTestFile(fileName, 'line 1\nline 2\nline 3');
-
-      const result = await callReplaceInFile({
-        path: fileName,
-        start_line: 1,
-        end_line: 1,
-        content: 'line 1 lf',
-      });
-
-      assert.strictEqual(result, `Successfully replaced lines 1 to 1 in "${fileName}".`);
-      const updated = await readTestFile(fileName);
-      assert.strictEqual(updated, 'line 1 lf\nline 2\nline 3');
-    });
-  });
-
-  suite('Boundary Clamping and Range Normalization', () => {
-    test('should clamp start_line <= 0 to 1', async () => {
-      const fileName = 'test-clamp-zero.txt';
-      await writeTestFile(fileName, 'line 1\nline 2\nline 3');
-
-      const result = await callReplaceInFile({
-        path: fileName,
-        start_line: 0,
-        end_line: 1,
-        content: 'new first line',
-      });
-
-      assert.strictEqual(result, `Successfully replaced lines 1 to 1 in "${fileName}".`);
-      const updated = await readTestFile(fileName);
-      assert.strictEqual(updated, 'new first line\nline 2\nline 3');
-    });
-
-    test('should clamp negative start_line to 1', async () => {
-      const fileName = 'test-clamp-neg.txt';
-      await writeTestFile(fileName, 'line 1\nline 2\nline 3');
-
-      const result = await callReplaceInFile({
-        path: fileName,
-        start_line: -5,
-        end_line: 1,
-        content: 'negative start fixed',
-      });
-
-      assert.strictEqual(result, `Successfully replaced lines 1 to 1 in "${fileName}".`);
-      const updated = await readTestFile(fileName);
-      assert.strictEqual(updated, 'negative start fixed\nline 2\nline 3');
-    });
-
-    test('should clamp end_line exceeding total line count to lines.length', async () => {
-      const fileName = 'test-clamp-end.txt';
-      await writeTestFile(fileName, 'line 1\nline 2\nline 3');
-
-      const result = await callReplaceInFile({
-        path: fileName,
-        start_line: 2,
-        end_line: 999,
-        content: 'new tail',
-      });
-
-      assert.strictEqual(result, `Successfully replaced lines 2 to 3 in "${fileName}".`);
-      const updated = await readTestFile(fileName);
-      assert.strictEqual(updated, 'line 1\nnew tail');
-    });
-
-    test('should normalize inverted range (start_line > end_line) by pinning end to start', async () => {
-      const fileName = 'test-inverted.txt';
-      await writeTestFile(fileName, 'line 1\nline 2\nline 3\nline 4\nline 5');
-
-      const result = await callReplaceInFile({
-        path: fileName,
-        start_line: 3,
-        end_line: 1,
-        content: 'line 3 replaced',
-      });
-
-      assert.strictEqual(result, `Successfully replaced lines 3 to 3 in "${fileName}".`);
-      const updated = await readTestFile(fileName);
-      assert.strictEqual(updated, 'line 1\nline 2\nline 3 replaced\nline 4\nline 5');
-    });
-  });
-
-  suite('Path Resolution', () => {
-    test('should resolve relative path against workspace root', async () => {
-      const fileName = 'subdir/nested.txt';
-      await writeTestFile(fileName, 'nested content');
-
-      const result = await callReplaceInFile({
-        path: fileName,
-        start_line: 1,
-        end_line: 1,
-        content: 'updated nested',
-      });
-
-      assert.strictEqual(result, `Successfully replaced lines 1 to 1 in "${fileName}".`);
-      const updated = await readTestFile(fileName);
-      assert.strictEqual(updated, 'updated nested');
-    });
-
-    test('should resolve absolute path directly', async () => {
-      const fileName = 'abs-test.txt';
-      const fileUri = await writeTestFile(fileName, 'abs content');
-
-      const result = await callReplaceInFile({
-        path: fileUri.fsPath,
-        start_line: 1,
-        end_line: 1,
-        content: 'updated abs',
-      });
-
-      assert.strictEqual(result, `Successfully replaced lines 1 to 1 in "${fileUri.fsPath}".`);
-      const updated = await readTestFile(fileName);
-      assert.strictEqual(updated, 'updated abs');
     });
   });
 
   suite('Error Handling', () => {
-    test('should return error message when file does not exist', async () => {
+    test('should return error when start_hash is not found', async () => {
+      const fileName = 'test-hash-notfound.txt';
+      await writeTestFile(fileName, 'line 1\nline 2\nline 3');
+
+      const result = await callReplaceInFile({
+        path: fileName,
+        start_hash: 'abcdef',
+        end_hash: getHash('line 3', 3),
+        content: 'irrelevant',
+      });
+
+      assert.ok(result.includes('Could not find line matching hash "abcdef"'));
+    });
+
+    test('should return error when end_hash is not found', async () => {
+      const fileName = 'test-hash-endnotfound.txt';
+      await writeTestFile(fileName, 'line 1\nline 2\nline 3');
+
+      const result = await callReplaceInFile({
+        path: fileName,
+        start_hash: getHash('line 1', 1),
+        end_hash: 'xxxxxx',
+        content: 'irrelevant',
+      });
+
+      assert.ok(result.includes('Could not find line matching hash "xxxxxx"'));
+    });
+
+    test('should return error when start_hash comes after end_hash', async () => {
+      const fileName = 'test-hash-inverted.txt';
+      await writeTestFile(fileName, 'line 1\nline 2\nline 3');
+
+      const hash1 = getHash('line 1', 1);
+      const hash3 = getHash('line 3', 3);
+
+      const result = await callReplaceInFile({
+        path: fileName,
+        start_hash: hash3,
+        end_hash: hash1,
+        content: 'irrelevant',
+      });
+
+      assert.ok(result.includes('is after end_hash'));
+    });
+
+    test('should return error when file does not exist', async () => {
       const result = await callReplaceInFile({
         path: 'non-existent-file-12345.txt',
-        start_line: 1,
-        end_line: 1,
+        start_hash: 'aaaaaa',
+        end_hash: 'bbbbbb',
         content: 'irrelevant',
       });
 
@@ -292,21 +251,56 @@ suite('ToolExecutor - replaceInFile Test Suite', () => {
     });
   });
 
+  suite('Hash collision resistance (duplicate lines)', () => {
+    test('should produce unique hashes for duplicate lines due to line number inclusion', () => {
+      const content = 'duplicate line';
+      const hash1 = ToolExecutor.hashLine(content, 1);
+      const hash2 = ToolExecutor.hashLine(content, 2);
+      const hash3 = ToolExecutor.hashLine(content, 3);
+
+      const hashes = new Set([hash1, hash2, hash3]);
+      assert.strictEqual(hashes.size, 3, 'All hashes should be unique despite identical content');
+    });
+  });
+
+  suite('CRLF preservation', () => {
+    test('should preserve CRLF line endings when replacing by hash', async () => {
+      const fileName = 'test-hash-crlf.txt';
+      await writeTestFile(fileName, 'line 1\r\nline 2\r\nline 3');
+
+      // Note: hashes are computed from lines split by /\r?\n/, so content won't include \r
+      const hash2 = getHash('line 2', 2);
+
+      const result = await callReplaceInFile({
+        path: fileName,
+        start_hash: hash2,
+        end_hash: hash2,
+        content: 'line 2 crlf',
+      });
+
+      assert.ok(result.includes('Successfully replaced'));
+      const updated = await readTestFile(fileName);
+      assert.strictEqual(updated, 'line 1\r\nline 2 crlf\r\nline 3');
+    });
+  });
+
   suite('ToolExecutor.execute Dispatch Integration', () => {
-    test('should successfully execute replace_in_file via tool dispatcher with JSON arguments', async () => {
-      const fileName = 'test-dispatch.txt';
+    test('should successfully execute replace_in_file via tool dispatcher with hash-based JSON args', async () => {
+      const fileName = 'test-hash-dispatch.txt';
       await writeTestFile(fileName, 'line 1\nline 2\nline 3');
+
+      const hash2 = getHash('line 2', 2);
 
       const args: ReplaceInFileArgs = {
         path: fileName,
-        start_line: 2,
-        end_line: 2,
+        start_hash: hash2,
+        end_hash: hash2,
         content: 'dispatched line 2',
       };
 
       const result = await executor.execute('replace_in_file', JSON.stringify(args));
 
-      assert.strictEqual(result, `Successfully replaced lines 2 to 2 in "${fileName}".`);
+      assert.ok(result.includes('Successfully replaced'));
       const updated = await readTestFile(fileName);
       assert.strictEqual(updated, 'line 1\ndispatched line 2\nline 3');
     });

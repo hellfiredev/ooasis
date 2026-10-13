@@ -56,8 +56,8 @@ export interface WriteFileArgs {
 
 export interface ReplaceInFileArgs {
   path: string;
-  start_line: number;
-  end_line: number;
+  start_hash: string;
+  end_hash: string;
   content: string;
 }
 

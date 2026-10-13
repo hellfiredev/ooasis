@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import {
   ReadFileArgs,
   WriteFileArgs,
@@ -67,7 +68,7 @@ export const AGENT_TOOLS = [
     function: {
       name: 'replace_in_file',
       description:
-        'Update an existing file by replacing a specific block of code based on line numbers. The lines from start_line to end_line (inclusive) will be replaced by the provided content. WARNING: Be extremely careful with end_line. LLMs frequently miscount lines and accidentally leave the last line of a block (e.g. a closing brace) behind. Double-check your line bounds.',
+        'Update an existing file by replacing a specific block of lines identified by their hash prefixes. Use the hash values shown in read_file output (the 6-character prefix before each line). The lines from start_hash to end_hash (inclusive) will be replaced by the provided content. WARNING: Do NOT include the hash prefixes in the replacement content. Just provide the raw code.',
       parameters: {
         type: 'object',
         properties: {
@@ -76,20 +77,20 @@ export const AGENT_TOOLS = [
             description:
               'Path to the file relative to the workspace root. Example: "src/extension.ts"',
           },
-          start_line: {
-            type: 'number',
-            description: 'The 1-indexed line to start the replacement (inclusive).',
+          start_hash: {
+            type: 'string',
+            description: 'The 6-character hash prefix of the first line to replace (from read_file output).',
           },
-          end_line: {
-            type: 'number',
-            description: 'The 1-indexed line to end the replacement (inclusive).',
+          end_hash: {
+            type: 'string',
+            description: 'The 6-character hash prefix of the last line to replace (from read_file output).',
           },
           content: {
             type: 'string',
             description: 'The replacement content.',
           },
         },
-        required: ['path', 'start_line', 'end_line', 'content'],
+        required: ['path', 'start_hash', 'end_hash', 'content'],
       },
     },
   },
@@ -196,6 +197,21 @@ export class ToolExecutor {
     }
   }
 
+  // ── Hashing utility ────────────────────────────────────────────────────────
+
+  /**
+   * Generate a short 6-character hash for a line based on its content and
+   * 1-indexed line number. Including the line number ensures uniqueness
+   * even for duplicate lines.
+   */
+  static hashLine(lineContent: string, lineNumber: number): string {
+    return crypto
+      .createHash('sha256')
+      .update(`${lineNumber}:${lineContent}`)
+      .digest('hex')
+      .slice(0, 6);
+  }
+
   // ── read_file ──────────────────────────────────────────────────────────────
 
   private async readFile(args: ReadFileArgs): Promise<string> {
@@ -212,7 +228,11 @@ export class ToolExecutor {
 
       const sliced = lines.slice(start, end);
       const numbered = sliced
-        .map((line, i) => `${start + i + 1}: ${line}`)
+        .map((line, i) => {
+          const lineNum = start + i + 1;
+          const hash = ToolExecutor.hashLine(line, lineNum);
+          return `${hash}: ${line}`;
+        })
         .join('\n');
 
       return `File: ${args.path} (lines ${start + 1}–${end})\n\`\`\`\n${numbered}\n\`\`\``;
@@ -233,14 +253,36 @@ export class ToolExecutor {
       
       const isCrlf = fileContent.includes('\r\n');
       const lines = fileContent.split(/\r?\n/);
-      const replacementLines = args.content.split(/\r?\n/);
+      const replacementLines = args.content.split(/\r?\n/).map(line => {
+        // Strip potential hash prefixes (e.g. "a1b2c3: ") if the LLM incorrectly included them
+        const match = line.match(/^[0-9a-f]{6}: (.*)$/);
+        return match ? match[1] : line;
+      });
 
-      const start = Math.max(1, args.start_line);
-      const end = Math.min(lines.length, Math.max(start, args.end_line));
+      // Build hash map: hash -> line index (0-based)
+      const hashToIndex = new Map<string, number>();
+      for (let i = 0; i < lines.length; i++) {
+        const hash = ToolExecutor.hashLine(lines[i], i + 1);
+        if (!hashToIndex.has(hash)) {
+          hashToIndex.set(hash, i);
+        }
+      }
 
-      // Lines are 1-indexed, so the array index is start - 1
-      // We remove (end - start + 1) lines and insert the new content
-      lines.splice(start - 1, end - start + 1, ...replacementLines);
+      const startIdx = hashToIndex.get(args.start_hash);
+      const endIdx = hashToIndex.get(args.end_hash);
+
+      if (startIdx === undefined) {
+        return `Error: Could not find line matching hash "${args.start_hash}" in "${args.path}". Re-read the file to get current hashes.`;
+      }
+      if (endIdx === undefined) {
+        return `Error: Could not find line matching hash "${args.end_hash}" in "${args.path}". Re-read the file to get current hashes.`;
+      }
+      if (startIdx > endIdx) {
+        return `Error: start_hash "${args.start_hash}" (line ${startIdx + 1}) is after end_hash "${args.end_hash}" (line ${endIdx + 1}) in "${args.path}".`;
+      }
+
+      // Replace the range
+      lines.splice(startIdx, endIdx - startIdx + 1, ...replacementLines);
       
       const newContent = lines.join(isCrlf ? '\r\n' : '\n');
       const newBytes = Buffer.from(newContent, 'utf-8');
@@ -250,7 +292,7 @@ export class ToolExecutor {
       const doc = await vscode.workspace.openTextDocument(uri);
       await vscode.window.showTextDocument(doc, { preview: true, preserveFocus: true });
 
-      return `Successfully replaced lines ${start} to ${end} in "${args.path}".`;
+      return `Successfully replaced lines ${startIdx + 1} to ${endIdx + 1} in "${args.path}".`;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       return `Error replacing in file "${args.path}": ${msg}`;
@@ -282,6 +324,16 @@ export class ToolExecutor {
   // ── run_terminal ───────────────────────────────────────────────────────────
 
   private async runTerminal(args: RunTerminalArgs): Promise<string> {
+    // Ask for user confirmation before executing
+    const answer = await vscode.window.showWarningMessage(
+      `The AI wants to run: ${args.command}`,
+      { modal: true },
+      'Allow', 'Deny'
+    );
+    if (answer !== 'Allow') {
+      return 'Command denied by user.';
+    }
+
     const cwd = args.cwd
       ? this.resolveWorkspacePath(args.cwd)
       : (this._workspaceRoot ?? '.');

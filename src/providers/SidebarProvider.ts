@@ -23,6 +23,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private _activeContextWindow: number = 0;
   private _modelNameDisplay: string = '';
   private _modelInfoPromise: Promise<void>;
+  private _abortController: AbortController | null = null;
 
   constructor(private readonly _extensionUri: vscode.Uri) {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -108,6 +109,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         case 'newChat':
           await this.initializeChat();
           break;
+        case 'stopGeneration':
+          this._abortController?.abort();
+          break;
         case 'webviewReady':
           this.postToWebview({
             command: 'modelInfo',
@@ -127,8 +131,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       const systemMdPath = vscode.Uri.joinPath(this._extensionUri, 'SYSTEM.md');
       const systemRules = await vscode.workspace.fs.readFile(systemMdPath);
       prompt = Buffer.from(systemRules).toString('utf-8');
-    } catch (err) {
-      console.warn('SYSTEM.md not found or could not be read. Using default system prompt.');
+    } catch {
+      // Fallback: auto-generate a minimal prompt from AGENT_TOOLS
+      const toolList = AGENT_TOOLS
+        .map(t => `- ${t.function.name}: ${t.function.description}`)
+        .join('\n');
+      prompt = `You have access to the following tools:\n\n${toolList}`;
+      console.log("System prompt:", prompt);
     }
 
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -368,7 +377,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   // ─── Agent Loop ───────────────────────────────────────────────────────────
 
   private async runAgentLoop() {
+    this._abortController = new AbortController();
+    const { signal } = this._abortController;
+
     for (let iteration = 0; MAX_AGENT_ITERATIONS === -1 || iteration < MAX_AGENT_ITERATIONS; iteration++) {
+      // Check if aborted before starting a new iteration
+      if (signal.aborted) {
+        this.postToWebview({ command: 'finalizeStream', text: '*(Stopped)*', done: true });
+        return;
+      }
+
       // Show streaming indicator
       this.postToWebview({ command: 'agentThinking', iteration });
 
@@ -384,6 +402,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         const response = await fetch(`${API_HOST}/v1/chat/completions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal,
           body: JSON.stringify({
             model: this._modelNameDisplay,
             messages: this._chatHistory,
@@ -480,6 +499,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           reasoningEndTime = Date.now();
         }
       } catch (err: unknown) {
+        if (signal.aborted) {
+          this.postToWebview({ command: 'finalizeStream', text: '*(Stopped)*', done: true });
+          return;
+        }
         const msg = err instanceof Error ? err.message : String(err);
         this.postToWebview({ command: 'agentError', text: `Connection error: ${msg}` });
         return;
@@ -525,6 +548,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         const toolResultMessages: ToolResultMessage[] = [];
 
         for (const tc of toolCalls) {
+          // Check if aborted before each tool execution
+          if (signal.aborted) {
+            this.postToWebview({ command: 'finalizeStream', text: '*(Stopped)*', done: true });
+            return;
+          }
+
           this.postToWebview({
             command: 'toolStart',
             toolCallId: tc.id,
