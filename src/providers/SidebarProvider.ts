@@ -13,7 +13,7 @@ import {
   WebviewLogLevel,
 } from '../types/chat';
 import { AGENT_TOOLS, ToolExecutor } from '../tools';
-import { API_HOST, getMaxAgentIterations, getMaxContinuations } from '../config';
+import { getApiHost, getMaxAgentIterations, getMaxContinuations } from '../config';
 import { ConversationSummarizer } from '../summarizer';
 import { DisplayLogBuilder } from '../history/displayLog';
 import {
@@ -92,7 +92,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   private async updateModelInfo() {
     try {
-      const res = await fetch(`${API_HOST}/v1/models`);
+      const res = await fetch(`${getApiHost()}/v1/models`);
       if (res.ok) {
         const json = await res.json() as any;
         const modelData = json.data?.[0];
@@ -793,7 +793,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       try {
         const apiMessages = this._chatHistory;
 
-        const response = await fetch(`${API_HOST}/v1/chat/completions`, {
+        const response = await fetch(`${getApiHost()}/v1/chat/completions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           signal,

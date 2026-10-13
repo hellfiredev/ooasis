@@ -1,17 +1,13 @@
 import * as vscode from 'vscode';
 
-function getRequiredConfig(configKey: string): string {
+export function getApiHost(): string {
   const config = vscode.workspace.getConfiguration('ooasis');
-  const configValue = config.get<string>(configKey);
-  
-  if (configValue && configValue.trim() !== '') {
-    return configValue;
+  const value = config.get<string>('apiHost');
+  if (!value || value.trim() === '') {
+    throw new Error('Missing configuration. Please set ooasis.apiHost in VS Code Settings.');
   }
-  
-  throw new Error(`Missing configuration. Please set ooasis.${configKey} in VS Code Settings.`);
+  return value.trim().replace(/\/+$/, '');
 }
-
-export const API_HOST = getRequiredConfig('apiHost');
 
 export const DEFAULT_MAX_AGENT_ITERATIONS = 10;
 export const DEFAULT_MAX_CONTINUATIONS = 3;

@@ -1,4 +1,4 @@
-import { API_HOST } from './config';
+import { getApiHost } from './config';
 import { ChatCompletionResponse, Message, ToolResultMessage } from './types/chat';
 
 /** Threshold ratio of prompt_tokens / contextWindow to trigger summarization */
@@ -61,7 +61,7 @@ export class ConversationSummarizer {
       const transcript = this.buildTranscript(messagesToSummarize);
       const summaryPrompt = this.buildSummaryPrompt(transcript);
 
-      const response = await fetch(`${API_HOST}/v1/chat/completions`, {
+      const response = await fetch(`${getApiHost()}/v1/chat/completions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal,
