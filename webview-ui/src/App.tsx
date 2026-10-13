@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { vscode } from './vscodeApi';
 import { marked } from 'marked';
 import markedKatex from 'marked-katex-extension';
@@ -190,6 +190,8 @@ function formatRelativeTime(ts: number): string {
   return new Date(ts).toLocaleDateString();
 }
 
+const MAX_MENTION_SUGGESTIONS = 10;
+
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -217,6 +219,7 @@ function App() {
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const mentionDropdownRef = useRef<HTMLDivElement>(null);
   const isNearBottomRef = useRef(true);
   const prevMessagesRef = useRef<ChatMessage[]>([]);
 
@@ -456,12 +459,14 @@ function App() {
     if (match) {
       setMentionStartIndex(textBeforeCursor.length - match[2].length - 1);
       setMentionQuery(match[2]);
+      setMentionSelectedIndex(0);
       if (!mentionVisible && workspaceFiles.length === 0) {
         vscode.postMessage({ command: 'getWorkspaceFiles' });
       }
       setMentionVisible(true);
     } else {
       setMentionVisible(false);
+      setMentionSelectedIndex(0);
     }
   };
 
@@ -557,6 +562,7 @@ function App() {
 
     setInput(beforeAt + mentionText + afterMention);
     setMentionVisible(false);
+    setMentionSelectedIndex(0);
     
     if (inputRef.current) {
       inputRef.current.focus();
@@ -579,6 +585,8 @@ function App() {
     setAttachedFiles([]);
     setConfirmations([]);
     setInput('');
+    setMentionVisible(false);
+    setMentionSelectedIndex(0);
     setCurrentSessionId(undefined);
     setView('chat');
     setTokenUsage(prev => prev ? { used: 0, total: prev.total } : null);
@@ -594,10 +602,42 @@ function App() {
     vscode.postMessage({ command: 'listSessions' });
   };
 
-  const filteredMentionFiles = mentionVisible ? workspaceFiles.filter(f => 
-    !attachedFiles.some(a => a.fsPath === f.fsPath) &&
-    (f.name.toLowerCase().includes(mentionQuery.toLowerCase()) || f.relativePath.toLowerCase().includes(mentionQuery.toLowerCase()))
-  ).slice(0, 25) : [];
+  const filteredMentionFiles = useMemo(() => {
+    if (!mentionVisible) return [];
+    return workspaceFiles.filter(f => 
+      !attachedFiles.some(a => a.fsPath === f.fsPath) &&
+      (f.name.toLowerCase().includes(mentionQuery.toLowerCase()) || f.relativePath.toLowerCase().includes(mentionQuery.toLowerCase()))
+    ).slice(0, MAX_MENTION_SUGGESTIONS);
+  }, [mentionVisible, workspaceFiles, attachedFiles, mentionQuery]);
+
+  const safeSelectedIndex = filteredMentionFiles.length > 0 && mentionSelectedIndex >= filteredMentionFiles.length
+    ? 0
+    : mentionSelectedIndex;
+
+  useEffect(() => {
+    if (!mentionVisible || filteredMentionFiles.length === 0) return;
+    const container = mentionDropdownRef.current;
+    if (!container) return;
+
+    if (safeSelectedIndex === 0) {
+      container.scrollTop = 0;
+      return;
+    }
+
+    const activeItem = container.children[safeSelectedIndex] as HTMLElement | undefined;
+    if (!activeItem) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const itemRect = activeItem.getBoundingClientRect();
+    const contentTop = containerRect.top + container.clientTop;
+    const contentBottom = contentTop + container.clientHeight;
+
+    if (itemRect.top < contentTop) {
+      container.scrollTop -= (contentTop - itemRect.top);
+    } else if (itemRect.bottom > contentBottom) {
+      container.scrollTop += (itemRect.bottom - contentBottom);
+    }
+  }, [mentionVisible, safeSelectedIndex, filteredMentionFiles]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
@@ -813,11 +853,11 @@ function App() {
       
       <div id="input-area">
         {mentionVisible && filteredMentionFiles.length > 0 && (
-          <div id="mention-dropdown" style={{ display: 'flex' }}>
+          <div id="mention-dropdown" ref={mentionDropdownRef} style={{ display: 'flex' }}>
             {filteredMentionFiles.map((file, idx) => (
               <div 
                 key={file.fsPath} 
-                className={`mention-item ${idx === mentionSelectedIndex ? 'active' : ''}`}
+                className={`mention-item ${idx === safeSelectedIndex ? 'active' : ''}`}
                 onClick={() => selectMentionFile(file)}
               >
                 <span className="mention-name">{file.name}</span>
@@ -863,26 +903,29 @@ function App() {
             value={input}
             onChange={handleInputChange}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                if (mentionVisible) {
+              if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey) {
+                if (mentionVisible && filteredMentionFiles.length > 0) {
                   e.preventDefault();
-                  if (filteredMentionFiles[mentionSelectedIndex]) {
-                    selectMentionFile(filteredMentionFiles[mentionSelectedIndex]);
+                  if (filteredMentionFiles[safeSelectedIndex]) {
+                    selectMentionFile(filteredMentionFiles[safeSelectedIndex]);
                   }
-                } else {
+                } else if (e.key === 'Enter') {
                   e.preventDefault();
                   handleSend();
                 }
               } else if (mentionVisible) {
-                if (e.key === 'ArrowDown') {
-                  e.preventDefault();
-                  setMentionSelectedIndex(prev => (prev + 1) % filteredMentionFiles.length);
-                } else if (e.key === 'ArrowUp') {
-                  e.preventDefault();
-                  setMentionSelectedIndex(prev => (prev - 1 + filteredMentionFiles.length) % filteredMentionFiles.length);
-                } else if (e.key === 'Escape') {
+                if (e.key === 'Escape') {
                   e.preventDefault();
                   setMentionVisible(false);
+                  setMentionSelectedIndex(0);
+                } else if (filteredMentionFiles.length > 0) {
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setMentionSelectedIndex(prev => (prev + 1) % filteredMentionFiles.length);
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setMentionSelectedIndex(prev => (prev - 1 + filteredMentionFiles.length) % filteredMentionFiles.length);
+                  }
                 }
               }
             }}
