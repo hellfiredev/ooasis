@@ -67,7 +67,7 @@ export const AGENT_TOOLS = [
     function: {
       name: 'replace_in_file',
       description:
-        'Update an existing file by replacing a specific block of code based on line numbers. The lines from start_line to end_line (inclusive) will be replaced by the provided content.',
+        'Update an existing file by replacing a specific block of code based on line numbers. The lines from start_line to end_line (inclusive) will be replaced by the provided content. WARNING: Be extremely careful with end_line. LLMs frequently miscount lines and accidentally leave the last line of a block (e.g. a closing brace) behind. Double-check your line bounds.',
       parameters: {
         type: 'object',
         properties: {
