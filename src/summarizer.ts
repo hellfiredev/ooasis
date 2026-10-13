@@ -98,7 +98,6 @@ export class ConversationSummarizer {
           model: modelName,
           stream: false,
           messages: [
-            { role: 'system', content: 'You are a concise technical summarizer. Produce short, dense summaries.' },
             { role: 'user', content: summaryPrompt },
           ],
         }),
@@ -117,6 +116,14 @@ export class ConversationSummarizer {
       const retainedMessages = chatHistory.slice(summarizeCount + 1);
       const trimmedHistory: (Message | ToolResultMessage)[] = [
         systemPrompt,
+        {
+          content: "Tell me about our conversation",
+          role: "user",
+        },
+        {
+          content: summaryText,
+          role: "assistant",
+        },
         ...retainedMessages,
       ];
 
@@ -134,11 +141,7 @@ export class ConversationSummarizer {
     const parts: string[] = [];
 
     for (const msg of messages) {
-      if (msg.role === 'tool') { continue; }
-
       const chatMsg = msg as Message;
-      if (!chatMsg.content) { continue; }
-
       parts.push(`${chatMsg.role.toUpperCase()}: ${chatMsg.content}`);
     }
 
@@ -149,25 +152,12 @@ export class ConversationSummarizer {
    * Build the prompt for the summarizer LLM, requesting a concise output.
    */
   private buildSummaryPrompt(transcript: string): string {
-    const instructions = `Summarize the conversation below into a concise bullet-point list.
-Focus only on: key decisions, outcomes, file paths modified, and errors encountered.
-Omit pleasantries, reasoning details, and raw code/data. Keep it short — every token saved here is a token available for the ongoing conversation.`;
+    const instructions = `Summarize the conversation below into a concise bullet-point list. 
+    Each bullet-point correspond to a message. 
+    No need to go into details.
+    Here is the transcript:
+    ${transcript}`;
 
-    if (this._conversationSummary) {
-      return `${instructions}
-
-Merge the previous summary with the new messages into one updated summary.
-
-[PREVIOUS SUMMARY]:
-${this._conversationSummary}
-
-[NEW MESSAGES]:
-${transcript}`;
-    }
-
-    return `${instructions}
-
-[MESSAGES]:
-${transcript}`;
+    return instructions;
   }
 }
