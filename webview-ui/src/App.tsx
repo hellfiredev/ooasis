@@ -1,8 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { vscode } from './vscodeApi';
 import { marked } from 'marked';
+import markedKatex from 'marked-katex-extension';
 import DOMPurify from 'dompurify';
+import 'katex/dist/katex.min.css';
 import './index.css';
+
+marked.use(markedKatex({ throwOnError: false }));
 
 interface FileAttachment {
   id: string;
@@ -54,6 +58,11 @@ interface ConfirmationRequest {
   id: string;
   text: string;
 }
+
+const safeSanitize = (html: string) => DOMPurify.sanitize(html, {
+  ADD_TAGS: ['math', 'annotation', 'semantics', 'mrow', 'mi', 'mn', 'mo', 'msup', 'msub', 'mfrac', 'mstyle', 'mphantom', 'mtable', 'mtr', 'mtd', 'mpadded', 'msqrt', 'menclose', 'munder', 'mover', 'munderover'],
+  ADD_ATTR: ['class', 'style', 'xmlns']
+}) as string;
 
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -150,8 +159,8 @@ function App() {
               {
                 id: Date.now().toString(),
                 role: 'assistant',
-                content: message.text ? DOMPurify.sanitize(marked.parse(message.text) as string) : '',
-                reasoning: message.reasoning ? DOMPurify.sanitize(marked.parse(message.reasoning) as string) : undefined,
+                content: message.text ? safeSanitize(marked.parse(message.text) as string) : '',
+                reasoning: message.reasoning ? safeSanitize(marked.parse(message.reasoning) as string) : undefined,
                 reasoningTimeMs: message.reasoningTimeMs
               }
             ]);
@@ -175,7 +184,7 @@ function App() {
             {
               id: Date.now().toString(),
               role: 'assistant',
-              content: `<div class="summary-block"><strong>Context Compressed</strong>${DOMPurify.sanitize(marked.parse(message.summary) as string)}</div>`
+              content: `<div class="summary-block"><strong>Context Compressed</strong>${safeSanitize(marked.parse(message.summary) as string)}</div>`
             }
           ]);
           break;
@@ -374,12 +383,12 @@ function App() {
             {streamingReasoning && (
                <details className="msg-reasoning" open>
                  <summary>Thinking</summary>
-                 <div className="reasoning-body" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(streamingReasoning) as string) }} />
+                 <div className="reasoning-body" dangerouslySetInnerHTML={{ __html: safeSanitize(marked.parse(streamingReasoning) as string) }} />
                </details>
             )}
             
             {streamingContent && (
-              <div className="msg-content" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(streamingContent) as string) }} />
+              <div className="msg-content" dangerouslySetInnerHTML={{ __html: safeSanitize(marked.parse(streamingContent) as string) }} />
             )}
           </div>
         )}
