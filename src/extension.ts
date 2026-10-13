@@ -26,13 +26,11 @@ export function activate(context: vscode.ExtensionContext) {
       const editor = vscode.window.activeTextEditor;
       if (editor && !editor.selection.isEmpty) {
         const selection = editor.selection;
-        const text = editor.document.getText(selection);
         const fileName = vscode.workspace.asRelativePath(editor.document.uri);
         const startLine = selection.start.line + 1;
         const endLine = selection.end.line + 1;
-        const langId = editor.document.languageId;
 
-        const quote = `\`\`\`${langId}\n// ${fileName} (lines ${startLine}-${endLine})\n${text}\n\`\`\``;
+        const quote = `${fileName}:${startLine}-${endLine} `;
         provider.addQuoteToInput(quote);
       }
     })
