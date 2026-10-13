@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import * as fs from 'fs';
 import {
   ReadFileArgs,
   WriteFileArgs,
@@ -361,47 +362,205 @@ export class ToolExecutor {
 
   // ── search_workspace ───────────────────────────────────────────────────────
 
+  private static readonly SEARCH_EXCLUDED_DIRS = new Set([
+    'node_modules',
+    '.git',
+    '.vscode',
+    '.vscode-test',
+    'out',
+    'dist',
+    'build',
+    '.idea',
+    '.next',
+    '.cache',
+    'coverage',
+    '.coverage',
+  ]);
+
+  private static readonly BINARY_EXTENSIONS = new Set([
+    '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.svgz',
+    '.pdf', '.zip', '.tar', '.gz', '.7z', '.rar',
+    '.exe', '.dll', '.so', '.dylib', '.bin',
+    '.woff', '.woff2', '.ttf', '.eot',
+    '.mp3', '.mp4', '.mov', '.avi', '.wav',
+    '.vsix', '.pyc', '.class',
+  ]);
+
+  private compileGlob(pattern?: string): (relPath: string, fileName: string) => boolean {
+    if (!pattern) {
+      return () => true;
+    }
+    const normalized = pattern.trim().replace(/\\/g, '/').replace(/^\.\//, '');
+    if (!normalized || normalized === '*' || normalized === '**' || normalized === '**/*') {
+      return () => true;
+    }
+
+    try {
+      let regexStr = '';
+      let i = 0;
+      while (i < normalized.length) {
+        const c = normalized[i];
+        if (c === '*' && normalized[i + 1] === '*') {
+          if (normalized[i + 2] === '/') {
+            regexStr += '(?:.*/)?';
+            i += 3;
+          } else {
+            regexStr += '.*';
+            i += 2;
+          }
+        } else if (c === '*') {
+          regexStr += '[^/]*';
+          i++;
+        } else if (c === '?') {
+          regexStr += '[^/]';
+          i++;
+        } else if (c === '{') {
+          regexStr += '(?:';
+          i++;
+        } else if (c === '}') {
+          regexStr += ')';
+          i++;
+        } else if (c === ',') {
+          regexStr += '|';
+          i++;
+        } else if ('[].+^$()|\\'.includes(c)) {
+          regexStr += '\\' + c;
+          i++;
+        } else {
+          regexStr += c;
+          i++;
+        }
+      }
+
+      const regex = new RegExp(`^${regexStr}$`, 'i');
+      if (!normalized.includes('/')) {
+        return (relPath: string, fileName: string) => regex.test(fileName) || regex.test(relPath);
+      }
+      return (relPath: string) => regex.test(relPath);
+    } catch {
+      return () => true;
+    }
+  }
+
   private async searchWorkspace(args: SearchWorkspaceArgs): Promise<string> {
-    const root = this._workspaceRoot ?? '.';
+    const root = path.resolve(this._workspaceRoot ?? '.');
     const { query, include_pattern, is_regex } = args;
 
-    return new Promise((resolve) => {
-      const { exec } = require('child_process') as typeof import('child_process');
+    if (!query) {
+      return 'Error: Search query cannot be empty.';
+    }
 
-      // Build rg command: max 50 matches, line numbers
-      const escapedQuery = query.replace(/"/g, '\\"');
-      const regexFlag = is_regex ? '' : '--fixed-strings';
-      const globFlag = include_pattern ? `--glob "${include_pattern}"` : '';
-      const cmd = `rg --line-number --max-count 1 --max-filesize 1M ${regexFlag} ${globFlag} "${escapedQuery}" .`;
+    let lineMatches: (line: string) => boolean;
+    if (is_regex) {
+      try {
+        const rx = new RegExp(query);
+        lineMatches = (line: string) => rx.test(line);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return `Error: Invalid regular expression "${query}": ${msg}`;
+      }
+    } else {
+      lineMatches = (line: string) => line.includes(query);
+    }
 
-      exec(cmd, { cwd: root, timeout: 10_000 }, (error, stdout, stderr) => {
-        if (error && !stdout) {
-          // rg exits with code 1 when no matches, not an error
-          if (error.code === 1) {
-            resolve(`No matches found for "${query}".`);
-          } else {
-            // Fallback to grep if rg not available
-            const grepCmd = `grep -rn --include="${include_pattern ?? '*'}" ${is_regex ? '-E' : '-F'} "${escapedQuery}" .`;
-            exec(grepCmd, { cwd: root, timeout: 10_000 }, (_e2, gStdout) => {
-              if (!gStdout.trim()) {
-                resolve(`No matches found for "${query}".`);
-              } else {
-                const lines = gStdout.trim().split('\n').slice(0, 50);
-                resolve(`Found ${lines.length} match(es) for "${query}":\n\n${lines.join('\n')}`);
-              }
-            });
-          }
+    const matchesPattern = this.compileGlob(include_pattern);
+    const matches: string[] = [];
+    const maxMatches = 50;
+    const maxFileSize = 1024 * 1024; // 1 MB
+
+    const walk = async (currentDir: string): Promise<void> => {
+      let entries: fs.Dirent[];
+      try {
+        entries = await fs.promises.readdir(currentDir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+
+      entries.sort((a, b) => a.name.localeCompare(b.name));
+
+      for (const entry of entries) {
+        if (matches.length >= maxMatches) {
           return;
         }
 
-        const lines = (stdout ?? '').trim().split('\n').filter(Boolean).slice(0, 50);
-        if (lines.length === 0) {
-          resolve(`No matches found for "${query}".`);
-        } else {
-          resolve(`Found ${lines.length} match(es) for "${query}":\n\n${lines.join('\n')}`);
+        const fullPath = path.join(currentDir, entry.name);
+
+        if (entry.isDirectory()) {
+          if (entry.isSymbolicLink()) {
+            continue;
+          }
+          const relDir = path.relative(root, fullPath).replace(/\\/g, '/');
+          if (ToolExecutor.SEARCH_EXCLUDED_DIRS.has(entry.name)) {
+            if (
+              !include_pattern ||
+              (!include_pattern.startsWith(entry.name) && !include_pattern.startsWith(relDir))
+            ) {
+              continue;
+            }
+          }
+          await walk(fullPath);
+        } else if (entry.isFile()) {
+          const relPath = path.relative(root, fullPath).replace(/\\/g, '/');
+
+          if (!matchesPattern(relPath, entry.name)) {
+            continue;
+          }
+
+          const ext = path.extname(entry.name).toLowerCase();
+          if (ToolExecutor.BINARY_EXTENSIONS.has(ext)) {
+            continue;
+          }
+
+          try {
+            const stat = await fs.promises.stat(fullPath);
+            if (stat.size === 0 || stat.size > maxFileSize) {
+              continue;
+            }
+
+            const buffer = await fs.promises.readFile(fullPath);
+            const sampleLen = Math.min(buffer.length, 512);
+            let isBinary = false;
+            for (let i = 0; i < sampleLen; i++) {
+              if (buffer[i] === 0) {
+                isBinary = true;
+                break;
+              }
+            }
+            if (isBinary) {
+              continue;
+            }
+
+            const content = buffer.toString('utf-8');
+            const lines = content.split(/\r?\n/);
+
+            for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+              const line = lines[lineIdx];
+              if (lineMatches(line)) {
+                matches.push(`${relPath}:${lineIdx + 1}:${line}`);
+                if (matches.length >= maxMatches) {
+                  return;
+                }
+              }
+            }
+          } catch {
+            continue;
+          }
         }
-      });
-    });
+      }
+    };
+
+    try {
+      await walk(root);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return `Error searching workspace: ${msg}`;
+    }
+
+    if (matches.length === 0) {
+      return `No matches found for "${query}".`;
+    }
+
+    return `Found ${matches.length} match(es) for "${query}":\n\n${matches.join('\n')}`;
   }
 
   // ── list_directory ─────────────────────────────────────────────────────────
