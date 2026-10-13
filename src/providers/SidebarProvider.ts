@@ -14,7 +14,7 @@ import {
 } from '../types/chat';
 import { AGENT_TOOLS, ToolExecutor } from '../tools';
 import { API_HOST, MODEL_NAME, MAX_MESSAGES, KEEP_MESSAGES, MAX_AGENT_ITERATIONS, SYSTEM_PROMPT } from '../config';
-import { getHtmlContent } from '../webview/getHtmlContent';
+
 
 const window = new JSDOM('').window;
 const DOMPurify = createDOMPurify(window);
@@ -47,10 +47,28 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       localResourceRoots: [this._extensionUri],
     };
 
-    const stylePath = vscode.Uri.joinPath(this._extensionUri, 'out', 'styles.css');
-    const styleUri = webviewView.webview.asWebviewUri(stylePath);
+    const scriptUri = webviewView.webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'webview-ui', 'dist', 'assets', 'index.js'));
+    const styleUri = webviewView.webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'webview-ui', 'dist', 'assets', 'index.css'));
 
-    webviewView.webview.html = getHtmlContent(styleUri, webviewView.webview);
+    const nonce = this.getNonce();
+
+    webviewView.webview.html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webviewView.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+  <title>Local AI Agent</title>
+  <link href="${styleUri}" rel="stylesheet">
+</head>
+<body>
+  <div id="root"></div>
+  <script nonce="${nonce}">
+    window.MODEL_NAME = "${MODEL_NAME}";
+  </script>
+  <script nonce="${nonce}" type="module" src="${scriptUri}"></script>
+</body>
+</html>`;
 
     webviewView.webview.onDidReceiveMessage(async (message) => {
       switch (message.command) {
@@ -479,5 +497,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   private postToWebview(msg: Record<string, unknown>) {
     this._webviewView?.webview.postMessage(msg);
+  }
+
+  private getNonce() {
+    let text = '';
+    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    for (let i = 0; i < 32; i++) {
+      text += possible.charAt(Math.floor(Math.random() * possible.length));
+    }
+    return text;
   }
 }
