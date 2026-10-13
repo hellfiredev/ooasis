@@ -24,15 +24,31 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private _modelNameDisplay: string = '';
   private _modelInfoPromise: Promise<void>;
   private _abortController: AbortController | null = null;
+  private _pendingConfirmations: Map<string, (result: boolean) => void> = new Map();
 
   constructor(private readonly _extensionUri: vscode.Uri) {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    this._toolExecutor = new ToolExecutor(workspaceRoot);
+    this._toolExecutor = new ToolExecutor(
+      workspaceRoot,
+      this._askUserConfirmation.bind(this)
+    );
 
     this.initializeChat();
 
     this._setupFileWatcher();
     this._modelInfoPromise = this.updateModelInfo();
+  }
+
+  private _askUserConfirmation(command: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const id = Date.now().toString() + Math.random().toString();
+      this._pendingConfirmations.set(id, resolve);
+      this.postToWebview({
+        command: 'askConfirmation',
+        id,
+        text: `The AI wants to run: ${command}`,
+      });
+    });
   }
 
   private async updateModelInfo() {
@@ -117,6 +133,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             command: 'modelInfo',
             info: { name: this._modelNameDisplay, contextWindow: this._activeContextWindow }
           });
+          break;
+        case 'answerConfirmation':
+          if (message.id && this._pendingConfirmations.has(message.id)) {
+            const resolve = this._pendingConfirmations.get(message.id);
+            if (resolve) {
+              resolve(message.result === true);
+            }
+            this._pendingConfirmations.delete(message.id);
+          }
           break;
       }
     });

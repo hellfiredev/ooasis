@@ -360,6 +360,55 @@ body {
 }
 
 
+/* ── Confirmation dialog ───────────────────── */
+
+.confirmation-dialog {
+  background: var(--bg-deep);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.confirmation-text {
+  font-size: 12px;
+  color: var(--text);
+  word-break: break-word;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+}
+
+.confirmation-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.confirm-btn {
+  border: none;
+  border-radius: var(--radius);
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.confirm-btn:hover { opacity: 0.85; }
+
+.confirm-btn.allow {
+  background: var(--success);
+  color: #fff;
+}
+
+.confirm-btn.deny {
+  background: var(--error);
+  color: #fff;
+}
+
+
 /* ── Mention dropdown ──────────────────────── */
 
 #mention-dropdown {

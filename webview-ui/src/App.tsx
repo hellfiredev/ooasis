@@ -50,6 +50,11 @@ function formatK(num: number) {
   return num.toString();
 }
 
+interface ConfirmationRequest {
+  id: string;
+  text: string;
+}
+
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -60,6 +65,7 @@ function App() {
   const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFileItem[]>([]);
   const [tokenUsage, setTokenUsage] = useState<{ used: number, total: number } | null>(null);
   const [modelInfo, setModelInfo] = useState<{ name: string; contextWindow: number } | null>(null);
+  const [confirmations, setConfirmations] = useState<ConfirmationRequest[]>([]);
 
   const [mentionVisible, setMentionVisible] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
@@ -163,6 +169,9 @@ function App() {
         case 'modelInfo':
           setModelInfo(message.info);
           setTokenUsage({ used: 0, total: message.info.contextWindow });
+          break;
+        case 'askConfirmation':
+          setConfirmations(prev => [...prev, { id: message.id, text: message.text }]);
           break;
       }
     };
@@ -392,6 +401,22 @@ function App() {
             ))}
           </div>
         )}
+
+        {confirmations.map(conf => (
+          <div key={conf.id} className="confirmation-dialog">
+            <div className="confirmation-text">{conf.text}</div>
+            <div className="confirmation-actions">
+              <button className="confirm-btn allow" onClick={() => {
+                vscode.postMessage({ command: 'answerConfirmation', id: conf.id, result: true });
+                setConfirmations(prev => prev.filter(c => c.id !== conf.id));
+              }}>Allow</button>
+              <button className="confirm-btn deny" onClick={() => {
+                vscode.postMessage({ command: 'answerConfirmation', id: conf.id, result: false });
+                setConfirmations(prev => prev.filter(c => c.id !== conf.id));
+              }}>Deny</button>
+            </div>
+          </div>
+        ))}
         
         <div id="input-row">
           <textarea

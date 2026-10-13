@@ -170,7 +170,10 @@ export const AGENT_TOOLS = [
 export class ToolExecutor {
   private _terminal: vscode.Terminal | undefined;
 
-  constructor(private readonly _workspaceRoot: string | undefined) {}
+  constructor(
+    private readonly _workspaceRoot: string | undefined,
+    private readonly _askUserConfirmation?: (command: string) => Promise<boolean>
+  ) {}
 
   async execute(toolName: string, argsJson: string): Promise<string> {
     try {
@@ -324,14 +327,11 @@ export class ToolExecutor {
   // ── run_terminal ───────────────────────────────────────────────────────────
 
   private async runTerminal(args: RunTerminalArgs): Promise<string> {
-    // Ask for user confirmation before executing
-    const answer = await vscode.window.showWarningMessage(
-      `The AI wants to run: ${args.command}`,
-      { modal: true },
-      'Allow', 'Deny'
-    );
-    if (answer !== 'Allow') {
-      return 'Command denied by user.';
+    if (this._askUserConfirmation) {
+      const isAllowed = await this._askUserConfirmation(args.command);
+      if (!isAllowed) {
+        return 'Command denied by user.';
+      }
     }
 
     const cwd = args.cwd

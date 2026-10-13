@@ -6,22 +6,22 @@ import { ToolExecutor } from '../tools';
 
 suite('Terminal Confirmation Test Suite', () => {
   let tempDirPath: string;
+  let mockUserResponse: boolean = false;
+  let receivedCommand: string = '';
   let executor: ToolExecutor;
-  let originalShowWarningMessage: typeof vscode.window.showWarningMessage;
 
   suiteSetup(async () => {
     tempDirPath = path.join(os.tmpdir(), `ooasis-term-test-${Date.now()}`);
     const tempDirUri = vscode.Uri.file(tempDirPath);
     await vscode.workspace.fs.createDirectory(tempDirUri);
-    executor = new ToolExecutor(tempDirPath);
-
-    // Save original function for restoration
-    originalShowWarningMessage = vscode.window.showWarningMessage;
+    
+    executor = new ToolExecutor(tempDirPath, async (command: string) => {
+      receivedCommand = command;
+      return mockUserResponse;
+    });
   });
 
   suiteTeardown(async () => {
-    // Restore original function
-    (vscode.window as any).showWarningMessage = originalShowWarningMessage;
     executor.dispose();
     try {
       await vscode.workspace.fs.delete(vscode.Uri.file(tempDirPath), { recursive: true, useTrash: false });
@@ -31,15 +31,13 @@ suite('Terminal Confirmation Test Suite', () => {
   });
 
   teardown(() => {
-    // Restore after each test
-    (vscode.window as any).showWarningMessage = originalShowWarningMessage;
+    // Reset state after each test
+    mockUserResponse = false;
+    receivedCommand = '';
   });
 
   test('should execute command when user allows it', async () => {
-    // Stub showWarningMessage to return 'Allow'
-    (vscode.window as any).showWarningMessage = async (): Promise<string | undefined> => {
-      return 'Allow';
-    };
+    mockUserResponse = true;
 
     const result = await executor.execute('run_terminal', JSON.stringify({
       command: 'echo "hello"'
@@ -49,10 +47,7 @@ suite('Terminal Confirmation Test Suite', () => {
   });
 
   test('should deny command when user clicks Deny', async () => {
-    // Stub showWarningMessage to return 'Deny'
-    (vscode.window as any).showWarningMessage = async (): Promise<string | undefined> => {
-      return 'Deny';
-    };
+    mockUserResponse = false;
 
     const result = await executor.execute('run_terminal', JSON.stringify({
       command: 'echo "should not run"'
@@ -61,34 +56,17 @@ suite('Terminal Confirmation Test Suite', () => {
     assert.strictEqual(result, 'Command denied by user.');
   });
 
-  test('should deny command when user dismisses dialog (undefined)', async () => {
-    // Stub showWarningMessage to return undefined (user pressed Escape or closed dialog)
-    (vscode.window as any).showWarningMessage = async (): Promise<string | undefined> => {
-      return undefined;
-    };
-
-    const result = await executor.execute('run_terminal', JSON.stringify({
-      command: 'echo "should not run"'
-    }));
-
-    assert.strictEqual(result, 'Command denied by user.');
-  });
-
-  test('confirmation dialog should receive the command text', async () => {
-    let receivedMessage: string = '';
-
-    (vscode.window as any).showWarningMessage = async (message: string): Promise<string | undefined> => {
-      receivedMessage = message;
-      return 'Deny'; // Deny to avoid actually running
-    };
+  test('confirmation callback should receive the command text', async () => {
+    mockUserResponse = false; // Deny to avoid actually running
 
     await executor.execute('run_terminal', JSON.stringify({
       command: 'npm test'
     }));
 
     assert.ok(
-      receivedMessage.includes('npm test'),
-      `Expected dialog message to include "npm test", got: "${receivedMessage}"`
+      receivedCommand.includes('npm test'),
+      `Expected callback command to include "npm test", got: "${receivedCommand}"`
     );
   });
 });
+
