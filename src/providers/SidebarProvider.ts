@@ -10,7 +10,7 @@ import {
   WorkspaceFileItem,
 } from '../types/chat';
 import { AGENT_TOOLS, ToolExecutor } from '../tools';
-import { API_HOST, MODEL_NAME, MAX_MESSAGES, KEEP_MESSAGES, MAX_AGENT_ITERATIONS, SYSTEM_PROMPT } from '../config';
+import { API_HOST, MODEL_NAME, MAX_MESSAGES, KEEP_MESSAGES, MAX_AGENT_ITERATIONS } from '../config';
 
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
@@ -86,7 +86,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   // ─── File Attachment Handling ──────────────────────────────────────────────
 
   private async getSystemPrompt(): Promise<string> {
-    let prompt = SYSTEM_PROMPT;
+    let prompt = '';
+    
+    try {
+      const systemMdPath = vscode.Uri.joinPath(this._extensionUri, 'SYSTEM.md');
+      const systemRules = await vscode.workspace.fs.readFile(systemMdPath);
+      prompt = Buffer.from(systemRules).toString('utf-8');
+    } catch (err) {
+      console.warn('SYSTEM.md not found or could not be read. Using default system prompt.');
+    }
+
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     
     if (workspaceRoot) {

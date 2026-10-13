@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
 
 function getRequiredConfig(configKey: string): string {
   const config = vscode.workspace.getConfiguration('ooasis');
@@ -16,5 +15,4 @@ export const API_HOST = getRequiredConfig('apiHost');
 export const MODEL_NAME = getRequiredConfig('modelName');
 export const MAX_MESSAGES = 20;
 export const KEEP_MESSAGES = 4;
-export const MAX_AGENT_ITERATIONS: number = 10;
-export const SYSTEM_PROMPT = fs.readFileSync('SYSTEM.md', 'utf-8');
+export const MAX_AGENT_ITERATIONS: number = -1;
