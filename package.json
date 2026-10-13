@@ -39,6 +39,18 @@
           "type": "string",
           "default": "http://127.0.0.1:1234",
           "description": "The API host for the LLM."
+        },
+        "ooasis.maxAgentIterations": {
+          "type": "integer",
+          "default": 10,
+          "minimum": 1,
+          "description": "The maximum number of agent iterations per request."
+        },
+        "ooasis.maxContinuations": {
+          "type": "integer",
+          "default": 3,
+          "minimum": 0,
+          "description": "The maximum number of continuations when a response is truncated."
         }
       }
     }

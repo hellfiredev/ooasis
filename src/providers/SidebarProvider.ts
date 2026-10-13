@@ -9,7 +9,7 @@ import {
   WorkspaceFileItem,
 } from '../types/chat';
 import { AGENT_TOOLS, ToolExecutor } from '../tools';
-import { API_HOST, MAX_AGENT_ITERATIONS } from '../config';
+import { API_HOST, getMaxAgentIterations, getMaxContinuations } from '../config';
 import { ConversationSummarizer } from '../summarizer';
 
 
@@ -462,9 +462,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     // Track continuations
     let continuationCount = 0;
-    const MAX_CONTINUATIONS = 3;
+    const maxContinuations = getMaxContinuations();
+    const maxAgentIterations = getMaxAgentIterations();
 
-    for (let iteration = 0; MAX_AGENT_ITERATIONS === -1 || iteration < MAX_AGENT_ITERATIONS; iteration++) {
+    for (let iteration = 0; iteration < maxAgentIterations; iteration++) {
       // Check if aborted before starting a new iteration
       if (signal.aborted) {
         this.postToWebview({ command: 'finalizeStream', text: '*(Stopped)*', done: true });
@@ -628,7 +629,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           done: false,
         });
 
-        if (continuationCount > MAX_CONTINUATIONS) {
+        if (continuationCount > maxContinuations) {
           this._chatHistory.push({
             role: 'assistant',
             content: assistantContent || null,
@@ -748,12 +749,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     // Exceeded max iterations
-    if (MAX_AGENT_ITERATIONS !== -1) {
-      this.postToWebview({
-        command: 'agentError',
-        text: `Agent reached maximum iterations (${MAX_AGENT_ITERATIONS}). Stopping.`,
-      });
-    }
+    this.postToWebview({
+      command: 'agentError',
+      text: `Agent reached maximum iterations (${maxAgentIterations}). Stopping.`,
+    });
   }
 
 

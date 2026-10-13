@@ -12,4 +12,24 @@ function getRequiredConfig(configKey: string): string {
 }
 
 export const API_HOST = getRequiredConfig('apiHost');
-export const MAX_AGENT_ITERATIONS: number = -1;
+
+export const DEFAULT_MAX_AGENT_ITERATIONS = 10;
+export const DEFAULT_MAX_CONTINUATIONS = 3;
+
+export function getMaxAgentIterations(): number {
+  const config = vscode.workspace.getConfiguration('ooasis');
+  const value = config.get<number>('maxAgentIterations');
+  if (typeof value === 'number' && value > 0) {
+    return Math.floor(value);
+  }
+  return DEFAULT_MAX_AGENT_ITERATIONS;
+}
+
+export function getMaxContinuations(): number {
+  const config = vscode.workspace.getConfiguration('ooasis');
+  const value = config.get<number>('maxContinuations');
+  if (typeof value === 'number' && value >= 0) {
+    return Math.floor(value);
+  }
+  return DEFAULT_MAX_CONTINUATIONS;
+}
