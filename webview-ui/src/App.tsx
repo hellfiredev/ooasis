@@ -42,7 +42,6 @@ function formatBytes(bytes: number) {
 
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [activeToolCalls, setActiveToolCalls] = useState<ToolCall[]>([]);
   const [input, setInput] = useState('');
   const [isThinking, setIsThinking] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
@@ -89,31 +88,49 @@ function App() {
           setStreamingReasoning(prev => prev + message.token);
           break;
         case 'toolStart':
-          setActiveToolCalls(prev => [
-            ...prev,
-            { id: message.toolCallId, name: message.toolName, args: message.args, status: 'running', open: false }
-          ]);
+          setMessages(prev => {
+            const lastMsg = prev[prev.length - 1];
+            const newTc = { id: message.toolCallId, name: message.toolName, args: message.args, status: 'running' as const, open: false };
+            if (lastMsg && lastMsg.role === 'assistant') {
+              return prev.map((m, i) => i === prev.length - 1 
+                ? { ...m, toolCalls: [...(m.toolCalls || []), newTc] }
+                : m
+              );
+            }
+            return [...prev, {
+              id: Date.now().toString(),
+              role: 'assistant',
+              content: '',
+              toolCalls: [newTc]
+            }];
+          });
           break;
         case 'toolResult':
-          setActiveToolCalls(prev => prev.map(tc => 
-            tc.id === message.toolCallId 
-              ? { ...tc, result: message.result, status: 'done' }
-              : tc
-          ));
+          setMessages(prev => prev.map(msg => {
+            if (!msg.toolCalls) return msg;
+            return {
+              ...msg,
+              toolCalls: msg.toolCalls.map(tc => 
+                tc.id === message.toolCallId
+                  ? { ...tc, result: message.result, status: 'done', open: false }
+                  : tc
+              )
+            };
+          }));
           break;
         case 'finalizeStream':
           setIsThinking(false);
-          setMessages(prev => [
-            ...prev,
-            {
-              id: Date.now().toString(),
-              role: 'assistant',
-              content: message.text || '',
-              reasoning: message.reasoning,
-              toolCalls: activeToolCalls.length > 0 ? activeToolCalls : undefined
-            }
-          ]);
-          setActiveToolCalls([]);
+          if (message.text || message.reasoning) {
+            setMessages(prev => [
+              ...prev,
+              {
+                id: Date.now().toString(),
+                role: 'assistant',
+                content: message.text || '',
+                reasoning: message.reasoning
+              }
+            ]);
+          }
           setStreamingContent('');
           setStreamingReasoning('');
           break;
@@ -229,7 +246,13 @@ function App() {
       <div id="chat-container" ref={chatContainerRef}>
         {messages.map(msg => (
           <div key={msg.id} className={msg.role === 'user' ? 'msg-user' : 'msg-assistant'}>
-            
+            {msg.reasoning && (
+              <details className="msg-reasoning">
+                <summary>Reasoning</summary>
+                <div className="reasoning-body" dangerouslySetInnerHTML={{ __html: msg.reasoning }} />
+              </details>
+            )}
+
             {msg.toolCalls && msg.toolCalls.map(tc => (
               <div key={tc.id} className={`tool-block ${tc.open ? 'open' : ''}`}>
                 <div className="tool-header" onClick={() => {
@@ -250,33 +273,12 @@ function App() {
               </div>
             ))}
 
-            <div className="msg-content" dangerouslySetInnerHTML={{ __html: msg.content }} />
-            {msg.reasoning && (
-              <details className="msg-reasoning">
-                <summary>Reasoning</summary>
-                <div className="reasoning-body" dangerouslySetInnerHTML={{ __html: msg.reasoning }} />
-              </details>
+            {msg.content && (
+              <div className="msg-content" dangerouslySetInnerHTML={{ __html: msg.content }} />
             )}
           </div>
         ))}
 
-        {activeToolCalls.map(tc => (
-          <div key={tc.id} className={`tool-block ${tc.open ? 'open' : ''}`}>
-            <div className="tool-header" onClick={() => {
-              setActiveToolCalls(prev => prev.map(t => t.id === tc.id ? { ...t, open: !t.open } : t));
-            }}>
-              <span className="tool-icon">🔧</span>
-              <span className="tool-name">{tc.name}</span>
-              <span className={`tool-status ${tc.status}`}>{tc.status === 'running' ? 'Running...' : 'Done'}</span>
-            </div>
-            <div className="tool-body">
-              <div className="tool-args">{tc.args}</div>
-              {tc.result && <div className="tool-result">{tc.result}</div>}
-            </div>
-          </div>
-        ))}
-
-        
         {(streamingContent || streamingReasoning) && (
           <div className="msg-assistant">
             {streamingReasoning && (
@@ -285,7 +287,10 @@ function App() {
                 <div className="reasoning-body">{streamingReasoning}</div>
               </details>
             )}
-            <div className="msg-content">{streamingContent}</div>
+
+            {streamingContent && (
+              <div className="msg-content">{streamingContent}</div>
+            )}
           </div>
         )}
 
