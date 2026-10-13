@@ -137,7 +137,7 @@ function App() {
               );
             }
             return [...prev, {
-              id: Date.now().toString(),
+              id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
               role: 'assistant',
               content: '',
               toolCalls: [newTc]
@@ -158,14 +158,14 @@ function App() {
           }));
           break;
         case 'finalizeStream':
-          setIsGenerating(false);
+          setIsGenerating(message.done === false);
           setIsThinking(false);
           setThinkingText('Thinking');
           if (message.text || message.reasoning) {
             setMessages(prev => [
               ...prev,
               {
-                id: Date.now().toString(),
+                id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
                 role: 'assistant',
                 content: message.text ? safeSanitize(marked.parse(message.text) as string) : '',
                 reasoning: message.reasoning ? safeSanitize(marked.parse(message.reasoning) as string) : undefined,
@@ -182,18 +182,20 @@ function App() {
           setThinkingText('Thinking');
           setMessages(prev => [
             ...prev,
-            { id: Date.now().toString(), role: 'assistant', content: `<div class="error">${message.text}</div>` }
+            { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, role: 'assistant', content: `<div class="error">${message.text}</div>` }
           ]);
           break;
         case 'summaryCompleted':
-          setMessages(prev => [
-            ...prev,
-            {
-              id: Date.now().toString(),
-              role: 'assistant',
-              content: `<div class="summary-block"><strong>Context Compressed</strong>${safeSanitize(marked.parse(message.summary) as string)}</div>`
-            }
-          ]);
+          if (message.summary) {
+            setMessages(prev => [
+              ...prev,
+              {
+                id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                role: 'assistant',
+                content: `<div class="summary-block"><strong>Context Compressed</strong>${safeSanitize(marked.parse(message.summary) as string)}</div>`
+              }
+            ]);
+          }
           break;
         case 'tokenUsage':
           setTokenUsage({
@@ -220,7 +222,7 @@ function App() {
   const handleScroll = () => {
     if (chatContainerRef.current) {
       const { scrollHeight, scrollTop, clientHeight } = chatContainerRef.current;
-      isNearBottomRef.current = scrollHeight - scrollTop - clientHeight < 10;
+      isNearBottomRef.current = scrollHeight - scrollTop - clientHeight < 20;
     }
   };
 
@@ -279,7 +281,7 @@ function App() {
     
     setMessages(prev => [
       ...prev,
-      { id: Date.now().toString(), role: 'user', content: userText }
+      { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, role: 'user', content: userText }
     ]);
     
     vscode.postMessage({

@@ -436,10 +436,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         contextWindow: this._activeContextWindow
       });
 
-      this.postToWebview({
-        command: 'summaryCompleted',
-        summary: result.summary,
-      });
+      if (result.summary) {
+        this.postToWebview({
+          command: 'summaryCompleted',
+          summary: result.summary,
+        });
+      }
     } catch (err) {
       if (signal?.aborted) { return; }
       const msg = err instanceof Error ? err.message : String(err);
@@ -458,8 +460,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
     const { signal } = this._abortController;
 
-    // Track accumulated text across truncation continuations
-    let continuationBuffer = '';
+    // Track continuations
     let continuationCount = 0;
     const MAX_CONTINUATIONS = 3;
 
@@ -612,30 +613,35 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       const isTruncated = finishReason === 'length' || finishReason === 'max_tokens';
       if (isTruncated) {
         continuationCount++;
-        continuationBuffer += assistantContent;
 
         let reasoningTimeMs = undefined;
         if (hasReasoning && reasoningEndTime) {
           reasoningTimeMs = reasoningEndTime - reasoningStartTime;
         }
 
+        // Finalize the current truncated assistant response as its own message
+        this.postToWebview({
+          command: 'finalizeStream',
+          text: assistantContent || '*(Truncated)*',
+          reasoning: assistantReasoning || undefined,
+          reasoningTimeMs,
+          done: false,
+        });
+
         if (continuationCount > MAX_CONTINUATIONS) {
-          // Too many continuations — finalize with everything accumulated so far
-          this.postToWebview({
-            command: 'finalizeStream',
-            text: continuationBuffer + '\n\n*(Response too long to continue further.)*',
-            reasoning: assistantReasoning || undefined,
-            reasoningTimeMs,
-            done: true,
-          });
           this._chatHistory.push({
             role: 'assistant',
-            content: continuationBuffer,
+            content: assistantContent || null,
+            ...(assistantReasoning && { reasoning_content: assistantReasoning }),
+          });
+          this.postToWebview({
+            command: 'agentError',
+            text: 'Response reached maximum continuation limit.',
           });
           return;
         }
 
-        // 1. Perform summarization first with UI thinking indicator (compresses conversation up to current user turn)
+        // 1. Perform summarization first (compresses conversation up to current user turn)
         await this.performSummarization(signal, 'Context limit reached. Compressing context...');
 
         if (signal.aborted) {
@@ -643,31 +649,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           return;
         }
 
-        // 2. Push the uncompressed partial assistant response to the summarized history
+        // 2. Push the truncated assistant response to the history
         this._chatHistory.push({
           role: 'assistant',
           content: assistantContent || null,
+          ...(assistantReasoning && { reasoning_content: assistantReasoning }),
         });
 
-        // 3. Inject a continuation prompt with strict guardrails so the model picks up where it left off
-        const trailingSnippet = assistantContent.length > 150
-          ? assistantContent.slice(-150)
-          : assistantContent;
-
-        const continuationPrompt = [
-          'Your previous response was cut off mid-stream due to output/context limits.',
-          ...(trailingSnippet ? [`Your output ended with:\n"""\n${trailingSnippet}\n"""`] : []),
-          '',
-          'STRICT CONTINUATION GUARDRAILS:',
-          '1. SEAMLESS RESUMPTION: Begin your output IMMEDIATELY with the very next character or word required to complete the thought. Do not restart the cut-off sentence, item, or section.',
-          '2. NO REPETITION OR REPHRASING: Do NOT repeat, rephrase, or summarize anything from your previous output.',
-          '3. NO META HEADERS OR FILLER: Do NOT add "(Cont.)", "(Continued)", "Here is the rest", apologies, or conversational transitions.',
-          '4. PRESERVE FORMATTING: Continue seamlessly with the exact same markdown structure, code block state, indentation, and list numbering.',
-        ].join('\n');
-
+        // 3. Inject continuation prompt
         this._chatHistory.push({
           role: 'user',
-          content: continuationPrompt,
+          content: 'Please continue your response from where you left off.',
         });
 
         continue;
@@ -693,9 +685,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
           this.postToWebview({
             command: 'finalizeStream',
-            text: continuationBuffer + assistantContent,
+            text: assistantContent,
             reasoning: assistantReasoning,
-            reasoningTimeMs
+            reasoningTimeMs,
+            done: false,
           });
         }
 
@@ -743,12 +736,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         reasoningTimeMs = reasoningEndTime - reasoningStartTime;
       }
 
-      // Merge any prior continuation chunks with the final segment
-      const fullAssistantContent = continuationBuffer + assistantContent;
-
       this.postToWebview({
         command: 'finalizeStream',
-        text: fullAssistantContent || '*(No response)*',
+        text: assistantContent || '*(No response)*',
         reasoning: assistantReasoning || undefined,
         reasoningTimeMs,
         done: true,
