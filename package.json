@@ -2,7 +2,7 @@
   "name": "ooasis",
   "displayName": "Ooasis",
   "description": "AI harness that does nothing",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "engines": {
     "vscode": "^1.136.0"
   },
@@ -91,8 +91,9 @@
     "esbuild": "npm run esbuild-base -- --sourcemap",
     "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
     "compile": "npm run build:webview && tsc --noEmit && npm run esbuild -- --minify",
+    "compile:tests": "tsc -p ./",
     "watch": "npm run esbuild-watch",
-    "pretest": "npm run compile && npm run lint",
+    "pretest": "npm run compile && npm run compile:tests && npm run lint",
     "lint": "eslint src",
     "test": "vscode-test",
     "package": "vsce package"

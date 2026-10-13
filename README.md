@@ -1,5 +1,9 @@
 # Ooasis - VS Code Extension
 
+[![CI](https://github.com/hellfiredev/ooasis/actions/workflows/ci.yml/badge.svg)](https://github.com/hellfiredev/ooasis/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.0.4-informational.svg)](package.json)
+
 Ooasis is a powerful AI chat assistant directly integrated into your Visual Studio Code editor. It provides a customized conversational interface in the secondary sidebar to help you reason about your code, chat with an LLM, and build software faster.
 
 ## Project Overview
@@ -22,6 +26,17 @@ The application is divided into two main parts that communicate via message pass
 - **Reasoning Display**: Dedicated UI components for displaying the AI's internal reasoning and thought processes.
 - **Modern Web UI**: Beautiful and responsive UI powered by React and standard CSS.
 - **Context-Aware**: Capable of reading active files and interacting with the VS Code workspace context.
+
+## Extension Settings
+
+Ooasis contributes the following configurable settings (`settings.json`):
+
+| Setting | Type | Default | Description |
+| :--- | :---: | :---: | :--- |
+| `ooasis.apiHost` | `string` | `"http://127.0.0.1:1234"` | API host for the OpenAI-compatible LLM endpoint (LM Studio, Ollama, etc.). |
+| `ooasis.maxAgentIterations` | `integer` | `10` | Maximum number of agentic tool iterations per request. |
+| `ooasis.maxContinuations` | `integer` | `3` | Maximum number of continuation requests when responses are truncated. |
+| `ooasis.history.maxSessions` | `integer` | `100` | Maximum number of saved chat sessions per workspace (`0` = unlimited). |
 
 ## Development Setup
 
