@@ -151,3 +151,67 @@ export interface WorkspaceFileItem {
   relativePath: string;
   fsPath: string;
 }
+
+// ─── Session Persistence Types ───────────────────────────────────────────────
+
+export interface DisplayToolCall {
+  id: string;
+  name: string;
+  args: string;
+  result?: string;
+}
+
+export interface DisplayUserEntry {
+  type: 'user';
+  text: string;
+  attachments?: string[];
+  timestamp: number;
+}
+
+export interface DisplayAssistantEntry {
+  type: 'assistant';
+  /** Raw markdown */
+  text: string;
+  /** Raw markdown */
+  reasoning?: string;
+  reasoningTimeMs?: number;
+  toolCalls?: DisplayToolCall[];
+  timestamp: number;
+}
+
+export interface DisplayErrorEntry {
+  type: 'error';
+  text: string;
+  timestamp: number;
+}
+
+export interface DisplaySummaryEntry {
+  type: 'summary';
+  text: string;
+  timestamp: number;
+}
+
+export type DisplayEntry =
+  | DisplayUserEntry
+  | DisplayAssistantEntry
+  | DisplayErrorEntry
+  | DisplaySummaryEntry;
+
+export interface SessionMeta {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  /** Number of user turns */
+  messageCount: number;
+  model?: string;
+}
+
+export interface SessionFile extends SessionMeta {
+  version: 1;
+  totalUsedTokens: number;
+  /** Exact LLM context (possibly summarized) — used for resuming */
+  apiHistory: (Message | ToolResultMessage)[];
+  /** Full human-readable transcript — used for re-rendering and export */
+  displayLog: DisplayEntry[];
+}

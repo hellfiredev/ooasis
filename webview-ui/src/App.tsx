@@ -59,10 +59,84 @@ interface ConfirmationRequest {
   text: string;
 }
 
+interface SessionMeta {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messageCount: number;
+  model?: string;
+}
+
+type DisplayEntry =
+  | { type: 'user'; text: string; attachments?: string[]; timestamp: number }
+  | {
+      type: 'assistant';
+      text: string;
+      reasoning?: string;
+      reasoningTimeMs?: number;
+      toolCalls?: { id: string; name: string; args: string; result?: string }[];
+      timestamp: number;
+    }
+  | { type: 'error'; text: string; timestamp: number }
+  | { type: 'summary'; text: string; timestamp: number };
+
 const safeSanitize = (html: string) => DOMPurify.sanitize(html, {
   ADD_TAGS: ['math', 'annotation', 'semantics', 'mrow', 'mi', 'mn', 'mo', 'msup', 'msub', 'mfrac', 'mstyle', 'mphantom', 'mtable', 'mtr', 'mtd', 'mpadded', 'msqrt', 'menclose', 'munder', 'mover', 'munderover'],
   ADD_ATTR: ['class', 'style', 'xmlns']
 }) as string;
+
+const renderMd = (text: string) => safeSanitize(marked.parse(text) as string);
+
+const newMessageId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+const errorHtml = (text: string) => `<div class="error">${text}</div>`;
+
+const summaryHtml = (summary: string) =>
+  `<div class="summary-block"><strong>Context Compressed</strong>${renderMd(summary)}</div>`;
+
+/** Convert a persisted transcript into renderable chat messages. */
+function entriesToMessages(entries: DisplayEntry[]): ChatMessage[] {
+  return entries.map((entry): ChatMessage => {
+    switch (entry.type) {
+      case 'user':
+        return { id: newMessageId(), role: 'user', content: entry.text };
+      case 'assistant':
+        return {
+          id: newMessageId(),
+          role: 'assistant',
+          content: entry.text ? renderMd(entry.text) : '',
+          reasoning: entry.reasoning ? renderMd(entry.reasoning) : undefined,
+          reasoningTimeMs: entry.reasoningTimeMs,
+          toolCalls: entry.toolCalls?.map(tc => ({
+            id: tc.id,
+            name: tc.name,
+            args: tc.args,
+            result: tc.result,
+            status: 'done' as const,
+            open: false,
+          })),
+        };
+      case 'error':
+        return { id: newMessageId(), role: 'assistant', content: errorHtml(entry.text) };
+      case 'summary':
+        return { id: newMessageId(), role: 'assistant', content: summaryHtml(entry.text) };
+    }
+  });
+}
+
+function formatRelativeTime(ts: number): string {
+  const diffSec = Math.round((Date.now() - ts) / 1000);
+  if (diffSec < 60) return 'Just now';
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.round(diffHr / 24);
+  if (diffDay === 1) return 'Yesterday';
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return new Date(ts).toLocaleDateString();
+}
 
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -77,6 +151,10 @@ function App() {
   const [tokenUsage, setTokenUsage] = useState<{ used: number, total: number } | null>(null);
   const [modelInfo, setModelInfo] = useState<{ name: string; contextWindow: number } | null>(null);
   const [confirmations, setConfirmations] = useState<ConfirmationRequest[]>([]);
+
+  const [view, setView] = useState<'chat' | 'history'>('chat');
+  const [sessions, setSessions] = useState<SessionMeta[] | null>(null);
+  const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(undefined);
 
   const [mentionVisible, setMentionVisible] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
@@ -165,10 +243,10 @@ function App() {
             setMessages(prev => [
               ...prev,
               {
-                id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                id: newMessageId(),
                 role: 'assistant',
-                content: message.text ? safeSanitize(marked.parse(message.text) as string) : '',
-                reasoning: message.reasoning ? safeSanitize(marked.parse(message.reasoning) as string) : undefined,
+                content: message.text ? renderMd(message.text) : '',
+                reasoning: message.reasoning ? renderMd(message.reasoning) : undefined,
                 reasoningTimeMs: message.reasoningTimeMs
               }
             ]);
@@ -182,7 +260,7 @@ function App() {
           setThinkingText('Thinking');
           setMessages(prev => [
             ...prev,
-            { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, role: 'assistant', content: `<div class="error">${message.text}</div>` }
+            { id: newMessageId(), role: 'assistant', content: errorHtml(message.text) }
           ]);
           break;
         case 'summaryCompleted':
@@ -190,9 +268,9 @@ function App() {
             setMessages(prev => [
               ...prev,
               {
-                id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                id: newMessageId(),
                 role: 'assistant',
-                content: `<div class="summary-block"><strong>Context Compressed</strong>${safeSanitize(marked.parse(message.summary) as string)}</div>`
+                content: summaryHtml(message.summary)
               }
             ]);
           }
@@ -209,6 +287,38 @@ function App() {
           break;
         case 'askConfirmation':
           setConfirmations(prev => [...prev, { id: message.id, text: message.text }]);
+          break;
+        case 'sessionList':
+          setSessions(message.sessions || []);
+          setCurrentSessionId(message.currentSessionId);
+          break;
+        case 'sessionRestored':
+          isNearBottomRef.current = true;
+          setMessages(entriesToMessages(message.entries || []));
+          setCurrentSessionId(message.sessionId);
+          setStreamingContent('');
+          setStreamingReasoning('');
+          setIsGenerating(false);
+          setIsThinking(false);
+          setThinkingText('Thinking');
+          setConfirmations([]);
+          setAttachedFiles([]);
+          setTokenUsage(prev => ({
+            used: message.usage?.total_tokens ?? 0,
+            total: message.contextWindow || prev?.total || 0,
+          }));
+          setView('chat');
+          break;
+        case 'sessionCleared':
+          setMessages([]);
+          setCurrentSessionId(undefined);
+          setStreamingContent('');
+          setStreamingReasoning('');
+          setIsGenerating(false);
+          setIsThinking(false);
+          setThinkingText('Thinking');
+          setConfirmations([]);
+          setTokenUsage(prev => prev ? { used: 0, total: prev.total } : null);
           break;
       }
     };
@@ -332,11 +442,24 @@ function App() {
     setIsThinking(false);
     setThinkingText('Thinking');
     setAttachedFiles([]);
+    setConfirmations([]);
     setInput('');
+    setCurrentSessionId(undefined);
+    setView('chat');
     setTokenUsage(prev => prev ? { used: 0, total: prev.total } : null);
     if (inputRef.current) {
       inputRef.current.style.height = 'auto';
     }
+  };
+
+  const toggleHistory = () => {
+    if (view === 'history') {
+      setView('chat');
+      return;
+    }
+    setSessions(null);
+    setView('history');
+    vscode.postMessage({ command: 'listSessions' });
   };
 
   const filteredMentionFiles = mentionVisible ? workspaceFiles.filter(f => 
@@ -350,8 +473,73 @@ function App() {
         <button className="new-chat-btn" onClick={handleNewChat} title="Start a new chat">
           + New Chat
         </button>
+        <button
+          className={`new-chat-btn history-btn ${view === 'history' ? 'active' : ''}`}
+          onClick={toggleHistory}
+          disabled={isGenerating}
+          title={isGenerating ? 'Unavailable while generating' : 'Browse saved conversations'}
+        >
+          History
+        </button>
       </div>
-      <div id="chat-container" ref={chatContainerRef} onScroll={handleScroll}>
+
+      {view === 'history' && (
+        <div className="history-view">
+          <div className="history-header">
+            <button className="history-back" onClick={() => setView('chat')} title="Back to chat">← Back</button>
+            <span className="history-title">Saved conversations</span>
+          </div>
+          {sessions === null ? (
+            <div className="history-empty">Loading…</div>
+          ) : sessions.length === 0 ? (
+            <div className="history-empty">No saved conversations yet.</div>
+          ) : (
+            <div className="history-list">
+              {sessions.map(s => (
+                <div
+                  key={s.id}
+                  className={`history-item ${s.id === currentSessionId ? 'active' : ''}`}
+                  onClick={() => vscode.postMessage({ command: 'loadSession', id: s.id })}
+                  title="Open this conversation"
+                >
+                  <div className="history-main">
+                    <div className="history-item-title">{s.title}</div>
+                    <div className="history-meta">
+                      {formatRelativeTime(s.updatedAt)} · {s.messageCount} turn{s.messageCount === 1 ? '' : 's'}
+                      {s.id === currentSessionId && <span className="history-current"> · current</span>}
+                    </div>
+                  </div>
+                  <div className="history-actions">
+                    <button
+                      className="history-action"
+                      title="Export as Markdown"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        vscode.postMessage({ command: 'exportSession', id: s.id });
+                      }}
+                    >⤓</button>
+                    <button
+                      className="history-action delete"
+                      title="Delete conversation"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        vscode.postMessage({ command: 'deleteSession', id: s.id });
+                      }}
+                    >🗑</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div
+        id="chat-container"
+        ref={chatContainerRef}
+        onScroll={handleScroll}
+        style={view === 'history' ? { display: 'none' } : undefined}
+      >
         {messages.map(msg => (
           <div key={msg.id} className={msg.role === 'user' ? 'msg-user' : 'msg-assistant'}>
             {msg.reasoning && (

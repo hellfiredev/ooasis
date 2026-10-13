@@ -51,6 +51,12 @@
           "default": 3,
           "minimum": 0,
           "description": "The maximum number of continuations when a response is truncated."
+        },
+        "ooasis.history.maxSessions": {
+          "type": "integer",
+          "default": 100,
+          "minimum": 0,
+          "description": "Maximum number of saved chat sessions per workspace. Oldest are deleted first. 0 = unlimited."
         }
       }
     }

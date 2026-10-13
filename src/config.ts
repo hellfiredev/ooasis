@@ -33,3 +33,15 @@ export function getMaxContinuations(): number {
   }
   return DEFAULT_MAX_CONTINUATIONS;
 }
+
+export const DEFAULT_MAX_SESSIONS = 100;
+
+/** Maximum number of saved chat sessions per workspace. 0 = unlimited. */
+export function getMaxSessions(): number {
+  const config = vscode.workspace.getConfiguration('ooasis');
+  const value = config.get<number>('history.maxSessions');
+  if (typeof value === 'number' && value >= 0) {
+    return Math.floor(value);
+  }
+  return DEFAULT_MAX_SESSIONS;
+}

@@ -7,10 +7,20 @@ import {
   ToolResultMessage,
   FileAttachment,
   WorkspaceFileItem,
+  SessionFile,
+  SessionMeta,
 } from '../types/chat';
 import { AGENT_TOOLS, ToolExecutor } from '../tools';
 import { API_HOST, getMaxAgentIterations, getMaxContinuations } from '../config';
 import { ConversationSummarizer } from '../summarizer';
+import { DisplayLogBuilder } from '../history/displayLog';
+import {
+  SessionStore,
+  generateSessionId,
+  isValidSessionId,
+  makeSessionTitle,
+} from '../history/sessionStore';
+import { sessionToMarkdown } from '../history/markdownExport';
 
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
@@ -27,7 +37,18 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private _totalUsedTokens: number = 0;
   private _summarizer = new ConversationSummarizer();
 
-  constructor(private readonly _extensionUri: vscode.Uri) {
+  // ─── Session persistence state ────────────────────────────────────────────
+  /** Undefined until the first user message of a conversation */
+  private _sessionId: string | undefined;
+  private _sessionTitle = '';
+  private _sessionCreatedAt = 0;
+  private _displayLog = new DisplayLogBuilder();
+  private _currentTurn: Promise<void> | null = null;
+
+  constructor(
+    private readonly _extensionUri: vscode.Uri,
+    private readonly _sessionStore: SessionStore,
+  ) {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     this._toolExecutor = new ToolExecutor(
       workspaceRoot,
@@ -124,7 +145,21 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           await this.handleAttachMentionedFile(message.fsPath);
           break;
         case 'newChat':
+          await this._stopAndWait();
           await this.initializeChat();
+          this.postToWebview({ command: 'sessionCleared' });
+          break;
+        case 'listSessions':
+          await this._sendSessionList();
+          break;
+        case 'loadSession':
+          await this._loadSession(message.id);
+          break;
+        case 'deleteSession':
+          await this._deleteSession(message.id);
+          break;
+        case 'exportSession':
+          await this._exportSession(message.id);
           break;
         case 'stopGeneration':
           this._abortController?.abort();
@@ -185,6 +220,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private async initializeChat() {
     this._totalUsedTokens = 0;
     this._summarizer.reset();
+    this._sessionId = undefined;
+    this._sessionTitle = '';
+    this._sessionCreatedAt = 0;
+    this._displayLog = new DisplayLogBuilder();
     this._chatHistory = [{
       role: 'system',
       content: await this.getSystemPrompt(),
@@ -381,34 +420,61 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     text: string,
     attachments?: FileAttachment[]
   ) {
+    const turn = this._runTurn(text, attachments);
+    this._currentTurn = turn;
+    try {
+      await turn;
+    } finally {
+      if (this._currentTurn === turn) {
+        this._currentTurn = null;
+      }
+    }
+  }
+
+  private async _runTurn(
+    text: string,
+    attachments?: FileAttachment[]
+  ) {
     this._abortController = new AbortController();
     const signal = this._abortController.signal;
 
-    let userContent = text;
-
-    if (attachments && attachments.length > 0) {
-      userContent += await this.formatAttachmentsForPrompt(attachments);
+    if (!this._sessionId) {
+      this._sessionId = generateSessionId();
+      this._sessionCreatedAt = Date.now();
+      this._sessionTitle = makeSessionTitle(text);
     }
+    this._displayLog.addUser(text, attachments?.map((a) => a.relativePath));
 
-    this._chatHistory.push({ role: 'user', content: userContent });
+    try {
+      let userContent = text;
 
-    // Check if context needs compression
-    const shouldSummarize = this._summarizer.shouldSummarize(
-      this._totalUsedTokens,
-      this._activeContextWindow,
-    );
+      if (attachments && attachments.length > 0) {
+        userContent += await this.formatAttachmentsForPrompt(attachments);
+      }
 
-    if (shouldSummarize) {
-      await this.performSummarization(signal);
+      this._chatHistory.push({ role: 'user', content: userContent });
+
+      // Check if context needs compression
+      const shouldSummarize = this._summarizer.shouldSummarize(
+        this._totalUsedTokens,
+        this._activeContextWindow,
+      );
+
+      if (shouldSummarize) {
+        await this.performSummarization(signal);
+      }
+
+      if (signal.aborted) {
+        this.postToWebview({ command: 'finalizeStream', text: '*(Stopped)*', done: true });
+        return;
+      }
+
+      // Run the agent loop
+      await this.runAgentLoop();
+    } finally {
+      // Persist after every turn — success, error, or stop
+      await this._saveSession();
     }
-
-    if (signal.aborted) {
-      this.postToWebview({ command: 'finalizeStream', text: '*(Stopped)*', done: true });
-      return;
-    }
-
-    // Run the agent loop
-    await this.runAgentLoop();
   }
 
   // ─── Summarization ────────────────────────────────────────────────────────
@@ -757,9 +823,174 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
 
 
+  // ─── Session Persistence ──────────────────────────────────────────────────
+
+  /**
+   * Abort any in-flight turn and wait for it to finish (including its final
+   * save) so a late save can never land in the wrong session.
+   */
+  private async _stopAndWait(): Promise<void> {
+    this._abortController?.abort();
+    // Unblock a turn waiting on a terminal confirmation
+    for (const [, resolve] of this._pendingConfirmations) {
+      resolve(false);
+    }
+    this._pendingConfirmations.clear();
+    if (this._currentTurn) {
+      try {
+        await this._currentTurn;
+      } catch {
+        // Errors are already surfaced by the turn itself
+      }
+    }
+  }
+
+  /** Persist the current conversation. No-op until the first user message. */
+  private async _saveSession(): Promise<void> {
+    if (!this._sessionId) { return; }
+    try {
+      await this._sessionStore.save({
+        version: 1,
+        id: this._sessionId,
+        title: this._sessionTitle || 'Untitled conversation',
+        createdAt: this._sessionCreatedAt,
+        updatedAt: Date.now(),
+        messageCount: this._displayLog.userTurnCount,
+        ...(this._modelNameDisplay && { model: this._modelNameDisplay }),
+        totalUsedTokens: this._totalUsedTokens,
+        // Snapshot: the write is queued, and history keeps mutating
+        apiHistory: structuredClone(this._chatHistory),
+        displayLog: structuredClone(this._displayLog.entries),
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('Failed to save conversation:', err);
+      vscode.window.showErrorMessage(`Ooasis: Failed to save conversation: ${msg}`);
+    }
+  }
+
+  private async _sendSessionList(): Promise<void> {
+    let sessions: SessionMeta[] = [];
+    try {
+      sessions = await this._sessionStore.list();
+    } catch (err) {
+      console.error('Failed to list conversations:', err);
+    }
+    this.postToWebview({
+      command: 'sessionList',
+      sessions,
+      currentSessionId: this._sessionId,
+    });
+  }
+
+  private async _loadSession(id: unknown): Promise<void> {
+    if (!isValidSessionId(id)) { return; }
+
+    await this._stopAndWait();
+
+    let session: SessionFile | undefined;
+    try {
+      session = await this._sessionStore.load(id);
+    } catch (err) {
+      console.error('Failed to load conversation:', err);
+    }
+    if (!session) {
+      vscode.window.showErrorMessage('Ooasis: Conversation not found or unreadable.');
+      await this._sendSessionList();
+      return;
+    }
+
+    this._summarizer.reset();
+    this._sessionId = session.id;
+    this._sessionTitle = session.title;
+    this._sessionCreatedAt = session.createdAt;
+    this._totalUsedTokens = session.totalUsedTokens ?? 0;
+
+    // Refresh the system prompt so resumed chats follow current SYSTEM.md / AGENTS.md
+    const rest = session.apiHistory[0]?.role === 'system'
+      ? session.apiHistory.slice(1)
+      : session.apiHistory;
+    this._chatHistory = [
+      { role: 'system', content: await this.getSystemPrompt() },
+      ...rest,
+    ];
+    this._displayLog = new DisplayLogBuilder(session.displayLog);
+
+    this.postToWebview({
+      command: 'sessionRestored',
+      sessionId: session.id,
+      entries: session.displayLog,
+      usage: { total_tokens: this._totalUsedTokens },
+      contextWindow: this._activeContextWindow,
+    });
+  }
+
+  private async _deleteSession(id: unknown): Promise<void> {
+    if (!isValidSessionId(id)) { return; }
+
+    let title = 'this conversation';
+    try {
+      const meta = (await this._sessionStore.list()).find((m) => m.id === id);
+      if (meta) { title = `"${meta.title}"`; }
+    } catch {
+      // Fall back to generic title
+    }
+
+    const choice = await vscode.window.showWarningMessage(
+      `Delete ${title}? This cannot be undone.`,
+      { modal: true },
+      'Delete'
+    );
+    if (choice !== 'Delete') { return; }
+
+    const isCurrent = id === this._sessionId;
+    if (isCurrent) {
+      await this._stopAndWait();
+    }
+
+    try {
+      await this._sessionStore.delete(id);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(`Ooasis: Failed to delete conversation: ${msg}`);
+    }
+
+    if (isCurrent) {
+      await this.initializeChat();
+      this.postToWebview({ command: 'sessionCleared' });
+    }
+    await this._sendSessionList();
+  }
+
+  private async _exportSession(id: unknown): Promise<void> {
+    if (!isValidSessionId(id)) { return; }
+
+    try {
+      if (id === this._sessionId) {
+        // Make sure the export includes the latest state
+        await this._saveSession();
+      }
+      const session = await this._sessionStore.load(id);
+      if (!session) {
+        vscode.window.showErrorMessage('Ooasis: Conversation not found or unreadable.');
+        return;
+      }
+      const doc = await vscode.workspace.openTextDocument({
+        language: 'markdown',
+        content: sessionToMarkdown(session),
+      });
+      await vscode.window.showTextDocument(doc, { preview: false });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(`Ooasis: Failed to export conversation: ${msg}`);
+    }
+  }
+
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
   private postToWebview(msg: Record<string, unknown>) {
+    // Record transcript-relevant events (ignores everything else)
+    this._displayLog.apply(msg);
     this._webviewView?.webview.postMessage(msg);
   }
 

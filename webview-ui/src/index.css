@@ -557,3 +557,133 @@ body {
 .attachment-chip .chip-remove:hover {
   color: var(--error);
 }
+
+/* ── History view ──────────────────────────── */
+
+.history-btn.active {
+  background: var(--bg-surface);
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+.history-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.history-header {
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.history-back {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  transition: color 0.15s;
+}
+.history-back:hover { color: var(--text); }
+
+.history-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.history-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.history-list::-webkit-scrollbar { width: 4px; }
+.history-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.history-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.history-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  background: transparent;
+  transition: background 0.15s;
+}
+.history-item:hover, .history-item.active {
+  background: var(--bg-surface);
+}
+
+.history-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.history-item-title {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+
+.history-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.history-current {
+  color: var(--accent);
+}
+
+.history-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.history-item:hover .history-actions,
+.history-item.active .history-actions {
+  opacity: 1;
+}
+
+.history-action {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 3px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.history-action:hover {
+  background: var(--bg-deep);
+  color: var(--text);
+}
+.history-action.delete:hover {
+  color: var(--error);
+}

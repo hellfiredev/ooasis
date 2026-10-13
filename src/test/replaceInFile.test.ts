@@ -165,7 +165,7 @@ suite('ToolExecutor - Hash-based replaceInFile Test Suite', () => {
         path: fileName,
         start_hash: hash2,
         end_hash: hash2,
-        content: 'a1b2c3: line 2 updated\nxyz789: extra line',
+        content: 'a1b2c3: line 2 updated\nd4e5f6: extra line',
       });
 
       assert.ok(result.includes('Successfully replaced'));
