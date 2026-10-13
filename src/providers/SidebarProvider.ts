@@ -26,6 +26,7 @@ import { sessionToMarkdown } from '../history/markdownExport';
 
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
+  private _pendingTextToInsert?: string;
   private _chatHistory: (Message | ToolResultMessage)[] = [];
   private _toolExecutor: ToolExecutor;
   private _webviewView: vscode.WebviewView | undefined;
@@ -64,6 +65,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     this._setupFileWatcher();
     this._modelInfoPromise = this.updateModelInfo();
+  }
+
+  public addQuoteToInput(text: string) {
+    if (this._webviewView) {
+      this.postToWebview({ command: 'insertText', text });
+    } else {
+      this._pendingTextToInsert = this._pendingTextToInsert 
+        ? this._pendingTextToInsert + '\n\n' + text 
+        : text;
+    }
   }
 
   private _askUserConfirmation(command: string): Promise<boolean> {
@@ -174,6 +185,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             command: 'modelInfo',
             info: { name: this._modelNameDisplay, contextWindow: this._activeContextWindow }
           });
+          if (this._pendingTextToInsert) {
+            this.postToWebview({ command: 'insertText', text: this._pendingTextToInsert });
+            this._pendingTextToInsert = undefined;
+          }
           break;
         case 'answerConfirmation':
           if (message.id && this._pendingConfirmations.has(message.id)) {

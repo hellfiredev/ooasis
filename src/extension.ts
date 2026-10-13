@@ -22,6 +22,19 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('first-extension.askAI', () => {
       vscode.commands.executeCommand('my-custom-ui-view.focus');
+
+      const editor = vscode.window.activeTextEditor;
+      if (editor && !editor.selection.isEmpty) {
+        const selection = editor.selection;
+        const text = editor.document.getText(selection);
+        const fileName = vscode.workspace.asRelativePath(editor.document.uri);
+        const startLine = selection.start.line + 1;
+        const endLine = selection.end.line + 1;
+        const langId = editor.document.languageId;
+
+        const quote = `\`\`\`${langId}\n// ${fileName} (lines ${startLine}-${endLine})\n${text}\n\`\`\``;
+        provider.addQuoteToInput(quote);
+      }
     })
   );
 }

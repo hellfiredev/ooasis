@@ -328,6 +328,18 @@ function App() {
             total: message.contextWindow
           });
           break;
+        case 'insertText':
+          setInput(prev => prev ? prev + '\n\n' + message.text : message.text);
+          if (inputRef.current) {
+            inputRef.current.focus();
+            setTimeout(() => {
+              if (inputRef.current) {
+                inputRef.current.style.height = 'auto';
+                inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 120) + 'px';
+              }
+            }, 0);
+          }
+          break;
         case 'modelInfo':
           setModelInfo(message.info);
           setTokenUsage({ used: 0, total: message.info.contextWindow });

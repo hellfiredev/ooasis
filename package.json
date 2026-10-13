@@ -14,6 +14,21 @@
   "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
+    "commands": [
+      {
+        "command": "first-extension.askAI",
+        "title": "Ooasis: Add Selection to Chat"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "first-extension.askAI",
+          "group": "navigation",
+          "when": "editorHasSelection"
+        }
+      ]
+    },
     "viewsContainers": {
       "secondarySidebar": [
         {
