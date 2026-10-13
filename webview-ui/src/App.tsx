@@ -59,6 +59,7 @@ function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isThinking, setIsThinking] = useState(false);
+  const [thinkingText, setThinkingText] = useState('Thinking');
   const [streamingContent, setStreamingContent] = useState('');
   const [streamingReasoning, setStreamingReasoning] = useState('');
   const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
@@ -96,8 +97,12 @@ function App() {
           });
           break;
         case 'loadingMessage':
+          setIsThinking(true);
+          setThinkingText(message.text || 'Thinking');
+          break;
         case 'agentThinking':
           setIsThinking(true);
+          setThinkingText('Thinking');
           break;
         case 'streamToken':
           setStreamingContent(prev => prev + message.token);
@@ -138,6 +143,7 @@ function App() {
           break;
         case 'finalizeStream':
           setIsThinking(false);
+          setThinkingText('Thinking');
           if (message.text || message.reasoning) {
             setMessages(prev => [
               ...prev,
@@ -155,14 +161,27 @@ function App() {
           break;
         case 'agentError':
           setIsThinking(false);
+          setThinkingText('Thinking');
           setMessages(prev => [
             ...prev,
             { id: Date.now().toString(), role: 'assistant', content: `<div class="error">${message.text}</div>` }
           ]);
           break;
+        case 'summaryCompleted':
+          setIsThinking(false);
+          setThinkingText('Thinking');
+          setMessages(prev => [
+            ...prev,
+            {
+              id: Date.now().toString(),
+              role: 'assistant',
+              content: `<div class="summary-block"><strong>Context Compressed</strong>${DOMPurify.sanitize(marked.parse(message.summary) as string)}</div>`
+            }
+          ]);
+          break;
         case 'tokenUsage':
           setTokenUsage({
-            used: message.usage.total_tokens,
+            used: message.usage.prompt_tokens,
             total: message.contextWindow
           });
           break;
@@ -256,6 +275,7 @@ function App() {
     setInput('');
     setAttachedFiles([]);
     setIsThinking(true);
+    setThinkingText('Thinking');
     
     if (inputRef.current) {
       inputRef.current.style.height = 'auto';
@@ -290,6 +310,7 @@ function App() {
     setStreamingContent('');
     setStreamingReasoning('');
     setIsThinking(false);
+    setThinkingText('Thinking');
     setAttachedFiles([]);
     setInput('');
     setTokenUsage(prev => prev ? { used: 0, total: prev.total } : null);
@@ -365,7 +386,7 @@ function App() {
         
         {isThinking && !streamingContent && !streamingReasoning && (
           <div className="thinking-indicator">
-            Thinking
+            {thinkingText}
             <div className="thinking-dots">
               <span></span><span></span><span></span>
             </div>

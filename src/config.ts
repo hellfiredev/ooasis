@@ -12,6 +12,4 @@ function getRequiredConfig(configKey: string): string {
 }
 
 export const API_HOST = getRequiredConfig('apiHost');
-export const MAX_MESSAGES = 20;
-export const KEEP_MESSAGES = 4;
 export const MAX_AGENT_ITERATIONS: number = -1;

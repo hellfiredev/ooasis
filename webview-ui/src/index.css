@@ -111,6 +111,26 @@ body {
 .msg-content:empty { display: none; }
 
 
+/* ── Summary block ─────────────────────────── */
+
+.summary-block {
+  background: color-mix(in srgb, var(--accent) 15%, var(--bg-surface));
+  border: 1px solid var(--accent);
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  color: var(--text);
+  margin-top: 4px;
+}
+
+.summary-block strong {
+  color: var(--accent);
+  font-size: 13px;
+  display: block;
+  margin-bottom: 6px;
+}
+
+
 /* ── Reasoning block ───────────────────────── */
 
 .msg-reasoning {

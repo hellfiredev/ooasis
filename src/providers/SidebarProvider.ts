@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import {
-  ChatCompletionResponse,
   ChatCompletionChunk,
   Message,
   ToolCall,
@@ -10,12 +9,12 @@ import {
   WorkspaceFileItem,
 } from '../types/chat';
 import { AGENT_TOOLS, ToolExecutor } from '../tools';
-import { API_HOST, MAX_MESSAGES, KEEP_MESSAGES, MAX_AGENT_ITERATIONS } from '../config';
+import { API_HOST, MAX_AGENT_ITERATIONS } from '../config';
+import { ConversationSummarizer } from '../summarizer';
 
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
   private _chatHistory: (Message | ToolResultMessage)[] = [];
-  private _isSummarizing = false;
   private _toolExecutor: ToolExecutor;
   private _webviewView: vscode.WebviewView | undefined;
   private _watcher: vscode.FileSystemWatcher | undefined;
@@ -25,6 +24,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private _modelInfoPromise: Promise<void>;
   private _abortController: AbortController | null = null;
   private _pendingConfirmations: Map<string, (result: boolean) => void> = new Map();
+  private _currentPromptTokens: number = 0;
+  private _summarizer = new ConversationSummarizer();
 
   constructor(private readonly _extensionUri: vscode.Uri) {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -154,8 +155,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     
     try {
       const systemMdPath = vscode.Uri.joinPath(this._extensionUri, 'SYSTEM.md');
+      console.debug('systemMdPath', systemMdPath);
       const systemRules = await vscode.workspace.fs.readFile(systemMdPath);
+      console.debug('systemRules', systemRules)
       prompt = Buffer.from(systemRules).toString('utf-8');
+      console.debug('prompt', prompt);
     } catch {
       // Fallback: auto-generate a minimal prompt from AGENT_TOOLS
       const toolList = AGENT_TOOLS
@@ -183,6 +187,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private async initializeChat() {
+    this._currentPromptTokens = 0;
+    this._summarizer.reset();
     this._chatHistory = [{
       role: 'system',
       content: await this.getSystemPrompt(),
@@ -379,6 +385,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     text: string,
     attachments?: FileAttachment[]
   ) {
+    this._abortController = new AbortController();
+    const signal = this._abortController.signal;
+
     let userContent = text;
 
     if (attachments && attachments.length > 0) {
@@ -387,22 +396,70 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     this._chatHistory.push({ role: 'user', content: userContent });
 
-    // Summarize if needed
-    const shouldSummarize = this._chatHistory.length > MAX_MESSAGES && !this._isSummarizing;
+    // Check if context needs compression
+    const shouldSummarize = this._summarizer.shouldSummarize(
+      this._currentPromptTokens,
+      this._activeContextWindow,
+    );
+
     if (shouldSummarize) {
-      this.postToWebview({ command: 'loadingMessage', text: 'Compressing context...' });
+      await this.performSummarization(signal);
     }
 
-    await this.triggerBackgroundSummary(shouldSummarize);
+    if (signal.aborted) {
+      this.postToWebview({ command: 'finalizeStream', text: '*(Stopped)*', done: true });
+      return;
+    }
 
     // Run the agent loop
     await this.runAgentLoop();
   }
 
+  // ─── Summarization ────────────────────────────────────────────────────────
+
+  private async performSummarization(signal?: AbortSignal, summarizeAll = false) {
+    this.postToWebview({
+      command: 'loadingMessage',
+      text: 'Conversation is too long, compressing context...',
+    });
+
+    try {
+      const result = await this._summarizer.summarize(
+        this._chatHistory,
+        this._modelNameDisplay,
+        signal,
+        summarizeAll
+      );
+
+      this._chatHistory = result.trimmedHistory;
+      this._currentPromptTokens = 0; // Reset — next API call will refresh
+
+      this.postToWebview({
+        command: 'tokenUsage',
+        usage: { prompt_tokens: 0, total_tokens: 0 },
+        contextWindow: this._activeContextWindow
+      });
+
+      this.postToWebview({
+        command: 'summaryCompleted',
+        summary: result.summary,
+      });
+    } catch (err) {
+      if (signal?.aborted) { return; }
+      const msg = err instanceof Error ? err.message : String(err);
+      this.postToWebview({
+        command: 'agentError',
+        text: `Context compression failed: ${msg}. Continuing with full history.`,
+      });
+    }
+  }
+
   // ─── Agent Loop ───────────────────────────────────────────────────────────
 
   private async runAgentLoop() {
-    this._abortController = new AbortController();
+    if (!this._abortController) {
+      this._abortController = new AbortController();
+    }
     const { signal } = this._abortController;
 
     for (let iteration = 0; MAX_AGENT_ITERATIONS === -1 || iteration < MAX_AGENT_ITERATIONS; iteration++) {
@@ -424,13 +481,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       let hasReasoning = false;
 
       try {
+        const apiMessages = this._summarizer.buildMessagesWithSummary(this._chatHistory);
+
         const response = await fetch(`${API_HOST}/v1/chat/completions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           signal,
           body: JSON.stringify({
             model: this._modelNameDisplay,
-            messages: this._chatHistory,
+            messages: apiMessages,
             tools: AGENT_TOOLS,
             tool_choice: 'auto',
             stream: true,
@@ -468,6 +527,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               const chunk = JSON.parse(data) as ChatCompletionChunk;
               
               if (chunk.usage) {
+                this._currentPromptTokens = chunk.usage.prompt_tokens;
                 this.postToWebview({
                   command: 'tokenUsage',
                   usage: chunk.usage,
@@ -552,6 +612,25 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       };
       this._chatHistory.push(assistantMessage);
 
+      const isTruncated = finishReason === 'length' || finishReason === 'max_tokens';
+      if (isTruncated) {
+        assistantContent += '\n\n*(Truncated due to context limit. Compressing context...)*';
+        let reasoningTimeMs = undefined;
+        if (hasReasoning && reasoningEndTime) {
+          reasoningTimeMs = reasoningEndTime - reasoningStartTime;
+        }
+        this.postToWebview({
+          command: 'finalizeStream',
+          text: assistantContent,
+          reasoning: assistantReasoning || undefined,
+          reasoningTimeMs,
+          done: true,
+        });
+
+        await this.performSummarization(signal, true);
+        return;
+      }
+
       // ── Case 1: Model wants to call tools ─────────────────────────────────
       if (toolCalls.length > 0) {
         // Finalize the streamed text before tool execution
@@ -633,51 +712,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  // ─── Summarization ────────────────────────────────────────────────────────
 
-  private async triggerBackgroundSummary(summarize: boolean) {
-    if (!summarize) { return; }
-
-    try {
-      this._isSummarizing = true;
-
-      const systemPrompt = this._chatHistory[0];
-      const messagesToSummarize = this._chatHistory.slice(1, -1 * KEEP_MESSAGES);
-      const summarizeCount = messagesToSummarize.length;
-
-      const transcript = messagesToSummarize
-        .map((msg) => `${msg.role.toUpperCase()}: ${(msg as Message).content ?? '[tool result]'}`)
-        .join('\n\n');
-
-      const summaryPrompt = `Summarize the following conversation concisely. Capture key technical details, file paths, decisions, and outcomes.\n\nTranscript:\n${transcript}`;
-
-      const response = await fetch(`${API_HOST}/v1/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: this._modelNameDisplay,
-          messages: [
-            { role: 'system', content: 'You are a technical summarizer.' },
-            { role: 'user', content: summaryPrompt },
-          ],
-        }),
-      });
-
-      const data = (await response.json()) as ChatCompletionResponse;
-      const summaryText = data.choices[0].message.content?.trim() ?? '';
-
-      const retainedRecentMessages = this._chatHistory.slice(summarizeCount + 1);
-      this._chatHistory = [
-        systemPrompt,
-        { role: 'system', content: `Summary of prior conversation: ${summaryText}` } as Message,
-        ...retainedRecentMessages,
-      ];
-    } catch (err) {
-      console.error('Summarization failed:', err);
-    } finally {
-      this._isSummarizing = false;
-    }
-  }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
