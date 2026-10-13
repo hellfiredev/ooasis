@@ -391,7 +391,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     const parts: ContentPart[] = [{ type: 'text', text }];
-    const MAX_INLINE_BYTES = 50 * 1024; // 50 KB
+    const MAX_BINARY_BYTES = 5 * 1024 * 1024; // 5 MB
 
     for (const att of attachments) {
       const uri = vscode.Uri.file(att.fsPath);
@@ -403,23 +403,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           continue;
         }
 
-        const rawBytes = await vscode.workspace.fs.readFile(uri);
-
         if (!att.isBinary) {
           let formatted = `\n\n### Attached File: \`${att.relativePath}\``;
-          if (rawBytes.length <= MAX_INLINE_BYTES) {
-            const fileText = Buffer.from(rawBytes).toString('utf-8');
-            const lang = this.getLanguageId(att.name);
-            formatted += ` (${this.formatBytes(att.size)})\n\`\`\`${lang}\n${fileText}\n\`\`\``;
-          } else {
-            const fullText = Buffer.from(rawBytes).toString('utf-8');
-            const lines = fullText.split('\n');
-            const truncatedLines = lines.slice(0, 500).join('\n');
-            const lang = this.getLanguageId(att.name);
-            formatted += ` (${this.formatBytes(att.size)} - Truncated: showing first 500 of ${lines.length} lines)\n\`\`\`${lang}\n${truncatedLines}\n\`\`\`\n*(Note: This file was truncated due to size. Use the \`read_file\` tool with start_line/end_line to inspect more.)*`;
-          }
+          formatted += ` (${this.formatBytes(att.size)})\n*(Note: File content is not provided. Use the \`read_file\` tool with the absolute path \`${att.fsPath}\` to read the file's content if needed.)*`;
           parts.push({ type: 'text', text: formatted });
         } else {
+          if (att.size > MAX_BINARY_BYTES) {
+            parts.push({ type: 'text', text: `\n\n### Attached File: \`${att.relativePath}\` (${this.formatBytes(att.size)})\n*(Note: Binary file exceeds size limit and was not sent.)*` });
+            continue;
+          }
+          const rawBytes = await vscode.workspace.fs.readFile(uri);
           const base64 = Buffer.from(rawBytes).toString('base64');
           const mime = this.getMimeType(ext);
 
