@@ -3,8 +3,16 @@ import * as path from 'path';
 
 dotenv.config({ path: path.join(__dirname, '../.env') });
 
-export const API_HOST = process.env.API_HOST ?? 'http://127.0.0.1:1234';
-export const MODEL_NAME = process.env.MODEL_NAME ?? 'gemma-e4b';
+function getRequiredEnv(key: string): string {
+  const value = process.env[key];
+  if (!value || value.trim() === '') {
+    throw new Error(`Missing required environment variable: ${key}`);
+  }
+  return value;
+}
+
+export const API_HOST = getRequiredEnv('API_HOST');
+export const MODEL_NAME = getRequiredEnv('MODEL_NAME');
 export const MAX_MESSAGES = 20;
 export const KEEP_MESSAGES = 4;
 export const MAX_AGENT_ITERATIONS = 10;
