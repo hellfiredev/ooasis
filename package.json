@@ -1,0 +1,78 @@
+{
+  "name": "first-extension",
+  "displayName": "first extension",
+  "description": "first extension",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.136.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "publisher": "room19",
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "first-extension.helloWorld",
+        "title": "Hello World"
+      }
+    ],
+    "viewsContainers": {
+      "secondarySidebar": [
+        {
+          "id": "my-secondary-container",
+          "title": "My Sidebar Extension",
+          "icon": "$(layout-sidebar-right)"
+        }
+      ]
+    },
+    "views": {
+      "my-secondary-container": [
+        {
+          "type": "webview",
+          "id": "my-custom-ui-view",
+          "name": "Custom UI"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test",
+    "watch:tailwind": "npx @tailwindcss/cli -i ./src/input.css -o ./out/styles.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "@types/dompurify": "^3.0.5",
+    "@types/marked": "^5.0.2",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "24.x",
+    "@types/vscode": "^1.136.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.0.0",
+    "eslint": "^10.5.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.1"
+  },
+  "overrides": {
+    "diff": "^8.0.4",
+    "serialize-javascript": "^7.0.6"
+  },
+  "allowScripts": {
+    "@parcel/watcher@2.5.1": true
+  },
+  "dependencies": {
+    "@types/jsdom": "^30.0.0",
+    "dompurify": "^3.4.14",
+    "dotenv": "^17.4.2",
+    "jsdom": "^30.0.1",
+    "marked": "^4.3.0"
+  }
+}
