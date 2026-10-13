@@ -51,7 +51,7 @@ function App() {
   const [streamingReasoning, setStreamingReasoning] = useState('');
   const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
   const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFileItem[]>([]);
-  
+
   const [mentionVisible, setMentionVisible] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
   const [mentionStartIndex, setMentionStartIndex] = useState(-1);
@@ -59,6 +59,7 @@ function App() {
 
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const prevMessagesRef = useRef<ChatMessage[]>([]); // Ref to track previous messages
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -148,14 +149,36 @@ function App() {
 
     window.addEventListener('message', handleMessage);
     vscode.postMessage({ command: 'getWorkspaceFiles' });
-    
+
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
+  // Modified useEffect to prevent scrolling on tool call expansion/collapse
   useEffect(() => {
+    const currentMessages = messages;
+    const previousMessages = prevMessagesRef.current;
+
+    // Check if the change is solely due to toggling the 'open' state of a tool call
+    const isToolCallToggle = currentMessages.some(msg => 
+      msg.toolCalls && msg.toolCalls.some(tc => {
+        const prevMsg = previousMessages.find(p => p.id === msg.id);
+        const prevTc = prevMsg?.toolCalls?.find(pTc => pTc.id === tc.id);
+        return prevTc && prevTc.open !== tc.open;
+      })
+    );
+
+    if (isToolCallToggle) {
+      // If it's just a toggle, do not scroll
+      return;
+    }
+
+    // If it's a new message or content update, scroll to bottom
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
+
+    // Update ref for next run
+    prevMessagesRef.current = currentMessages;
   }, [messages, streamingContent, streamingReasoning, isThinking]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -267,13 +290,13 @@ function App() {
                 <div className="reasoning-body" dangerouslySetInnerHTML={{ __html: msg.reasoning }} />
               </details>
             )}
-
+            
             {msg.content && (
               msg.role === 'user' 
                 ? msg.content
                 : <div className="msg-content" dangerouslySetInnerHTML={{ __html: msg.content }} />
             )}
-
+            
             {msg.toolCalls && msg.toolCalls.map(tc => (
               <div key={tc.id} className={`tool-block ${tc.open ? 'open' : ''}`}>
                 <div className="tool-header" onClick={() => {
@@ -295,22 +318,22 @@ function App() {
             ))}
           </div>
         ))}
-
+        
         {(streamingContent || streamingReasoning) && (
           <div className="msg-assistant">
             {streamingReasoning && (
                <details className="msg-reasoning" open>
-                <summary>Thinking</summary>
-                <div className="reasoning-body" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(streamingReasoning) as string) }} />
-              </details>
+                 <summary>Thinking</summary>
+                 <div className="reasoning-body" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(streamingReasoning) as string) }} />
+               </details>
             )}
-
+            
             {streamingContent && (
               <div className="msg-content" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(streamingContent) as string) }} />
             )}
           </div>
         )}
-
+        
         {isThinking && !streamingContent && !streamingReasoning && (
           <div className="thinking-indicator">
             Thinking
