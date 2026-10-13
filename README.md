@@ -71,4 +71,4 @@ Use `vsce` to package the extension. Make sure your `.vscodeignore` correctly ig
 ```bash
 npx @vscode/vsce package
 ```
-This will generate a `first-extension-x.x.x.vsix` file in your root directory, which can be installed manually in VS Code or published to the Marketplace.
+This will generate a `ooasis-x.x.x.vsix` file in your root directory, which can be installed manually in VS Code or published to the Marketplace.

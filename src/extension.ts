@@ -13,15 +13,15 @@ export function activate(context: vscode.ExtensionContext) {
   const provider = new SidebarProvider(context.extensionUri, sessionStore, outputChannel);
 
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider('my-custom-ui-view', provider, {
+    vscode.window.registerWebviewViewProvider('ooasis-chat-view', provider, {
       webviewOptions: { retainContextWhenHidden: true }
     })
   );
 
   // Command: Ask AI about selected code (palette command)
   context.subscriptions.push(
-    vscode.commands.registerCommand('first-extension.askAI', () => {
-      vscode.commands.executeCommand('my-custom-ui-view.focus');
+    vscode.commands.registerCommand('ooasis.askAI', () => {
+      vscode.commands.executeCommand('ooasis-chat-view.focus');
 
       const editor = vscode.window.activeTextEditor;
       if (editor && !editor.selection.isEmpty) {
