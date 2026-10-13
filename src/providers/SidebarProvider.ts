@@ -25,10 +25,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     this._toolExecutor = new ToolExecutor(workspaceRoot);
 
-    this._chatHistory.push({
-      role: 'system',
-      content: SYSTEM_PROMPT,
-    });
+    this.initializeChat();
 
     this._setupFileWatcher();
   }
@@ -80,16 +77,39 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           await this.handleAttachMentionedFile(message.fsPath);
           break;
         case 'newChat':
-          this._chatHistory = [{
-            role: 'system',
-            content: SYSTEM_PROMPT,
-          }];
+          await this.initializeChat();
           break;
       }
     });
   }
 
   // ─── File Attachment Handling ──────────────────────────────────────────────
+
+  private async getSystemPrompt(): Promise<string> {
+    let prompt = SYSTEM_PROMPT;
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    
+    if (workspaceRoot) {
+      const agentsMdPath = path.join(workspaceRoot, 'AGENTS.md');
+      try {
+        const uri = vscode.Uri.file(agentsMdPath);
+        await vscode.workspace.fs.stat(uri);
+        const customRules = await vscode.workspace.fs.readFile(uri);
+        prompt += '\n\n# Workspace Rules (AGENTS.md)\n' + Buffer.from(customRules).toString('utf-8');
+      } catch (err) {
+        // Ignore if file doesn't exist
+      }
+    }
+    
+    return prompt;
+  }
+
+  private async initializeChat() {
+    this._chatHistory = [{
+      role: 'system',
+      content: await this.getSystemPrompt(),
+    }];
+  }
 
   private _setupFileWatcher() {
     this._watcher = vscode.workspace.createFileSystemWatcher('**/*', false, true, false);
