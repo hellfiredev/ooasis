@@ -7,10 +7,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 ## [Unreleased]
 
 ### Added
-- Terminal execution sandbox (`TerminalSandbox`) enforcing workspace path containment for `run_terminal`, blocking commands that escape the workspace or target sensitive system directories.
-- Configuration options `ooasis.terminalSandbox.enabled` and `ooasis.terminalSandbox.allowTempDirectory`.
-- Tool execution status indicators: pass `isError` in `toolResult` and render a red `failed` badge in the chat UI when tool execution errors occur.
-- Comprehensive unit and integration test suites covering terminal sandbox validation, path containment, and machine-scoped settings.
+- Interactive user confirmation dialog before executing any terminal command via `run_terminal`.
+- Automated test coverage for terminal confirmation behavior.
 
 ### Security
 - Scoped `ooasis.apiHost` configuration setting to `machine` to prevent untrusted workspaces from hijacking the API endpoint.

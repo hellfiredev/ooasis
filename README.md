@@ -25,7 +25,7 @@ The application is divided into two main parts that communicate via message pass
 - **Streaming Responses**: Real-time token streaming for fast and responsive AI replies.
 - **Reasoning Display**: Dedicated UI components for displaying the AI's internal reasoning and thought processes.
 - **Agentic Workspace Tools**: Secure agent tools for exploring and modifying code (`read_file`, `write_file`, `replace_in_file`, `list_directory`, `search_workspace`).
-- **Terminal Execution Sandbox**: Integrated terminal execution (`run_in_terminal`) with interactive user confirmation and sandbox safeguards that block commands attempting to escape or modify paths outside the workspace.
+- **Terminal Execution with User Approval**: Integrated terminal execution (`run_terminal`) with explicit interactive confirmation before executing any command in the workspace.
 - **Session Management**: Persistent chat history per workspace, automatic conversation summarization, token usage tracking, and markdown export.
 - **Modern Web UI**: Beautiful and responsive UI powered by React 19, KaTeX math formatting, and standard CSS.
 - **Privacy & Local-First**: Works completely locally with OpenAI-compatible endpoints (LM Studio, Ollama, etc.) without telemetry or cloud tracking. Requires VS Code Workspace Trust.
@@ -40,8 +40,6 @@ Ooasis contributes the following configurable settings (`settings.json`):
 | `ooasis.maxAgentIterations` | `integer` | `10` | Maximum number of agentic tool iterations per request. |
 | `ooasis.maxContinuations` | `integer` | `3` | Maximum number of continuation requests when responses are truncated. |
 | `ooasis.history.maxSessions` | `integer` | `100` | Maximum number of saved chat sessions per workspace (`0` = unlimited). |
-| `ooasis.terminalSandbox.enabled` | `boolean` | `true` | Enable sandbox for `run_terminal` tool to prevent modifying files outside the workspace. |
-| `ooasis.terminalSandbox.allowTempDirectory` | `boolean` | `false` | Allow terminal commands to modify files in the system temporary directory. |
 
 ## Development Setup
 
@@ -112,7 +110,7 @@ npm test
 
 Ooasis is built with security as a core architectural priority:
 - **Strict Path Containment**: Tool file operations (`read_file`, `write_file`, `replace_in_file`, `list_directory`, `search_workspace`) and webview `openFile` messages are strictly confined within the workspace root.
-- **Terminal Sandbox**: Integrated shell execution validates commands to prevent directory traversal, destructive modifications, and path escapes outside the workspace.
+- **Terminal Execution Safeguards**: Integrated shell execution requires explicit user confirmation before running any command, ensuring full human-in-the-loop control.
 - **Workspace Trust**: Untrusted workspaces are explicitly blocked (`untrustedWorkspaces: { supported: false }`).
 - **Webview CSP**: Hardened Content Security Policy with nonces, `base-uri 'none'`, and `form-action 'none'`.
 - **Zero Telemetry**: No tracking, analytics, or external cloud requests.

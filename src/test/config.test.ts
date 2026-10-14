@@ -5,13 +5,9 @@ import {
   DEFAULT_MAX_AGENT_ITERATIONS,
   DEFAULT_MAX_CONTINUATIONS,
   DEFAULT_MAX_SESSIONS,
-  DEFAULT_TERMINAL_SANDBOX_ENABLED,
-  DEFAULT_TERMINAL_SANDBOX_ALLOW_TEMP,
   getMaxAgentIterations,
   getMaxContinuations,
   getMaxSessions,
-  isTerminalSandboxEnabled,
-  isTerminalSandboxAllowTemp,
 } from '../config';
 
 suite('Configuration Settings Test Suite', () => {
@@ -19,8 +15,6 @@ suite('Configuration Settings Test Suite', () => {
     assert.strictEqual(DEFAULT_MAX_AGENT_ITERATIONS, 10);
     assert.strictEqual(DEFAULT_MAX_CONTINUATIONS, 3);
     assert.strictEqual(DEFAULT_MAX_SESSIONS, 100);
-    assert.strictEqual(DEFAULT_TERMINAL_SANDBOX_ENABLED, true);
-    assert.strictEqual(DEFAULT_TERMINAL_SANDBOX_ALLOW_TEMP, false);
   });
 
   test('getMaxAgentIterations should return a positive integer', () => {
@@ -71,30 +65,10 @@ suite('Configuration Settings Test Suite', () => {
     assert.strictEqual(sessionsConfig.type, 'integer');
     assert.strictEqual(sessionsConfig.default, 100);
     assert.strictEqual(sessionsConfig.minimum, 0);
-
-    // terminalSandbox.enabled check
-    const sandboxEnabledConfig = properties['ooasis.terminalSandbox.enabled'];
-    assert.ok(sandboxEnabledConfig, 'ooasis.terminalSandbox.enabled should be contributed in package.json');
-    assert.strictEqual(sandboxEnabledConfig.type, 'boolean');
-    assert.strictEqual(sandboxEnabledConfig.default, true);
-    assert.ok(sandboxEnabledConfig.description, 'ooasis.terminalSandbox.enabled should have a description');
-
-    // terminalSandbox.allowTempDirectory check
-    const sandboxTempConfig = properties['ooasis.terminalSandbox.allowTempDirectory'];
-    assert.ok(sandboxTempConfig, 'ooasis.terminalSandbox.allowTempDirectory should be contributed in package.json');
-    assert.strictEqual(sandboxTempConfig.type, 'boolean');
-    assert.strictEqual(sandboxTempConfig.default, false);
-    assert.ok(sandboxTempConfig.description, 'ooasis.terminalSandbox.allowTempDirectory should have a description');
-
     // apiHost check (must have machine scope to prevent workspace setting hijacking)
     const apiHostConfig = properties['ooasis.apiHost'];
     assert.ok(apiHostConfig, 'ooasis.apiHost should be contributed in package.json');
     assert.strictEqual(apiHostConfig.scope, 'machine', 'ooasis.apiHost must be machine-scoped to prevent untrusted repo hijack');
-  });
-
-  test('isTerminalSandboxEnabled and isTerminalSandboxAllowTemp return boolean values', () => {
-    assert.strictEqual(typeof isTerminalSandboxEnabled(), 'boolean');
-    assert.strictEqual(typeof isTerminalSandboxAllowTemp(), 'boolean');
   });
 
   test('package.json should declare untrustedWorkspaces capability as unsupported', () => {
