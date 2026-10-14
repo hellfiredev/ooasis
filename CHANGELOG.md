@@ -6,7 +6,10 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-10-14
+
 ### Added
+- Automated Dependabot configuration for npm and GitHub Actions dependency updates.
 - Interactive user confirmation dialog before executing any terminal command via `run_terminal`.
 - Automated test coverage for terminal confirmation behavior.
 

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/hellfiredev/ooasis/actions/workflows/ci.yml/badge.svg)](https://github.com/hellfiredev/ooasis/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.0.4-informational.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-0.0.5-informational.svg)](package.json)
 
 Ooasis is a powerful AI chat assistant directly integrated into your Visual Studio Code editor. It provides a customized conversational interface in the secondary sidebar to help you reason about your code, chat with an LLM, and build software faster.
 
