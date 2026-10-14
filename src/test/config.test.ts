@@ -85,6 +85,11 @@ suite('Configuration Settings Test Suite', () => {
     assert.strictEqual(sandboxTempConfig.type, 'boolean');
     assert.strictEqual(sandboxTempConfig.default, false);
     assert.ok(sandboxTempConfig.description, 'ooasis.terminalSandbox.allowTempDirectory should have a description');
+
+    // apiHost check (must have machine scope to prevent workspace setting hijacking)
+    const apiHostConfig = properties['ooasis.apiHost'];
+    assert.ok(apiHostConfig, 'ooasis.apiHost should be contributed in package.json');
+    assert.strictEqual(apiHostConfig.scope, 'machine', 'ooasis.apiHost must be machine-scoped to prevent untrusted repo hijack');
   });
 
   test('isTerminalSandboxEnabled and isTerminalSandboxAllowTemp return boolean values', () => {

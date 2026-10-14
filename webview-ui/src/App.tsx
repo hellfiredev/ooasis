@@ -146,16 +146,47 @@ type DisplayEntry =
   | { type: 'error'; text: string; timestamp: number }
   | { type: 'summary'; text: string; timestamp: number };
 
+DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
+  if (data.attrName === 'style') {
+    const isKatex =
+      node.classList?.contains('katex') ||
+      node.classList?.contains('katex-strut') ||
+      node.classList?.contains('pstrut') ||
+      node.classList?.contains('frac-line') ||
+      node.classList?.contains('vlist') ||
+      node.classList?.contains('mspace') ||
+      (typeof node.closest === 'function' && Boolean(node.closest('.katex')));
+
+    if (!isKatex) {
+      data.keepAttr = false;
+      return;
+    }
+
+    if (/\b(position\s*:|z-index\s*:|pointer-events\s*:|opacity\s*:|fixed|absolute)\b/i.test(data.attrValue)) {
+      data.keepAttr = false;
+    }
+  }
+});
+
 const safeSanitize = (html: string) => DOMPurify.sanitize(html, {
-  ADD_TAGS: ['math', 'annotation', 'semantics', 'mrow', 'mi', 'mn', 'mo', 'msup', 'msub', 'mfrac', 'mstyle', 'mphantom', 'mtable', 'mtr', 'mtd', 'mpadded', 'msqrt', 'menclose', 'munder', 'mover', 'munderover'],
-  ADD_ATTR: ['class', 'style', 'xmlns']
+  USE_PROFILES: { html: true, mathMl: true },
+  ADD_ATTR: ['class', 'style'],
 }) as string;
 
 const renderMd = (text: string) => safeSanitize(marked.parse(text) as string);
 
 const newMessageId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-const errorHtml = (text: string) => `<div class="error">${text}</div>`;
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+const errorHtml = (text: string) => `<div class="error">${escapeHtml(text)}</div>`;
 
 const summaryHtml = (summary: string) =>
   `<div class="summary-block"><strong>Context Compressed</strong>${renderMd(summary)}</div>`;
@@ -242,6 +273,9 @@ function App() {
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       const message = event.data;
+      if (!message || typeof message !== 'object' || typeof message.command !== 'string') {
+        return;
+      }
       switch (message.command) {
         case 'workspaceFiles':
           setWorkspaceFiles(message.files);

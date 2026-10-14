@@ -138,7 +138,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webviewView.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webviewView.webview.cspSource} blob:; worker-src ${webviewView.webview.cspSource} blob:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; form-action 'none'; style-src ${webviewView.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webviewView.webview.cspSource}; worker-src ${webviewView.webview.cspSource} blob:; font-src ${webviewView.webview.cspSource}; img-src ${webviewView.webview.cspSource} data:;">
   <title>Local AI Agent</title>
   <link href="${styleUri}" rel="stylesheet">
 </head>
@@ -170,11 +170,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         case 'openFile':
           if (typeof message.path === 'string' && message.path) {
             const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-            const absPath = path.isAbsolute(message.path)
-              ? message.path
-              : (workspaceRoot ? path.join(workspaceRoot, message.path) : message.path);
+            const validation = this.validateOpenFilePath(message.path, workspaceRoot);
+            if (!validation.allowed) {
+              vscode.window.showErrorMessage(validation.error || 'Access denied.');
+              break;
+            }
             try {
-              const uri = vscode.Uri.file(absPath);
+              const uri = vscode.Uri.file(validation.absPath);
               const doc = await vscode.workspace.openTextDocument(uri);
               await vscode.window.showTextDocument(doc, { preview: true, preserveFocus: false });
             } catch {
@@ -1266,6 +1268,19 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     // Record transcript-relevant events (ignores everything else)
     this._displayLog.apply(msg);
     this._webviewView?.webview.postMessage(msg);
+  }
+
+  public validateOpenFilePath(filePath: string, workspaceRoot?: string): { allowed: boolean; absPath: string; error?: string } {
+    if (!workspaceRoot) {
+      return { allowed: false, absPath: '', error: 'No workspace open to view files.' };
+    }
+    const root = path.resolve(workspaceRoot);
+    const absPath = path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(root, filePath);
+    const rel = path.relative(root, absPath);
+    if (rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) {
+      return { allowed: false, absPath, error: `Access denied: path "${filePath}" is outside the workspace.` };
+    }
+    return { allowed: true, absPath };
   }
 
   private getNonce() {
