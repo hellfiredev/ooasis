@@ -109,11 +109,23 @@ suite('Webview Logging Test Suite', () => {
       const originalConsoleDebug = console.debug;
 
       const logged: { type: string; msg: string }[] = [];
-      console.log = (...args: unknown[]) => { logged.push({ type: 'log', msg: args.join(' ') }); };
-      console.error = (...args: unknown[]) => { logged.push({ type: 'error', msg: args.join(' ') }); };
-      console.warn = (...args: unknown[]) => { logged.push({ type: 'warn', msg: args.join(' ') }); };
-      console.info = (...args: unknown[]) => { logged.push({ type: 'info', msg: args.join(' ') }); };
-      console.debug = (...args: unknown[]) => { logged.push({ type: 'debug', msg: args.join(' ') }); };
+      const mockLog = (...args: unknown[]) => { logged.push({ type: 'log', msg: args.join(' ') }); };
+      const mockError = (...args: unknown[]) => { logged.push({ type: 'error', msg: args.join(' ') }); };
+      const mockWarn = (...args: unknown[]) => { logged.push({ type: 'warn', msg: args.join(' ') }); };
+      const mockInfo = (...args: unknown[]) => { logged.push({ type: 'info', msg: args.join(' ') }); };
+      const mockDebug = (...args: unknown[]) => { logged.push({ type: 'debug', msg: args.join(' ') }); };
+
+      const origDescLog = Object.getOwnPropertyDescriptor(console, 'log');
+      const origDescError = Object.getOwnPropertyDescriptor(console, 'error');
+      const origDescWarn = Object.getOwnPropertyDescriptor(console, 'warn');
+      const origDescInfo = Object.getOwnPropertyDescriptor(console, 'info');
+      const origDescDebug = Object.getOwnPropertyDescriptor(console, 'debug');
+
+      Object.defineProperty(console, 'log', { value: mockLog, configurable: true, writable: true });
+      Object.defineProperty(console, 'error', { value: mockError, configurable: true, writable: true });
+      Object.defineProperty(console, 'warn', { value: mockWarn, configurable: true, writable: true });
+      Object.defineProperty(console, 'info', { value: mockInfo, configurable: true, writable: true });
+      Object.defineProperty(console, 'debug', { value: mockDebug, configurable: true, writable: true });
 
       try {
         const levels: WebviewLogLevel[] = ['log', 'info', 'warn', 'error', 'debug'];
@@ -134,11 +146,11 @@ suite('Webview Logging Test Suite', () => {
         assert.ok(logged.some(l => l.type === 'error' && l.msg.includes('[Webview][ERROR] Sample message for error')));
         assert.ok(logged.some(l => l.type === 'debug' && l.msg.includes('[Webview][DEBUG] Sample message for debug')));
       } finally {
-        console.log = originalConsoleLog;
-        console.error = originalConsoleError;
-        console.warn = originalConsoleWarn;
-        console.info = originalConsoleInfo;
-        console.debug = originalConsoleDebug;
+        if (origDescLog) { Object.defineProperty(console, 'log', origDescLog); } else { console.log = originalConsoleLog; }
+        if (origDescError) { Object.defineProperty(console, 'error', origDescError); } else { console.error = originalConsoleError; }
+        if (origDescWarn) { Object.defineProperty(console, 'warn', origDescWarn); } else { console.warn = originalConsoleWarn; }
+        if (origDescInfo) { Object.defineProperty(console, 'info', origDescInfo); } else { console.info = originalConsoleInfo; }
+        if (origDescDebug) { Object.defineProperty(console, 'debug', origDescDebug); } else { console.debug = originalConsoleDebug; }
       }
     });
   });

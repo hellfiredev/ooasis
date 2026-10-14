@@ -6,6 +6,22 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+### Added
+- Terminal execution sandbox (`TerminalSandbox`) enforcing workspace path containment for `run_terminal`, blocking commands that escape the workspace or target sensitive system directories.
+- Configuration options `ooasis.terminalSandbox.enabled` and `ooasis.terminalSandbox.allowTempDirectory`.
+- Tool execution status indicators: pass `isError` in `toolResult` and render a red `failed` badge in the chat UI when tool execution errors occur.
+- Comprehensive unit and integration test suites covering terminal sandbox validation, path containment, and machine-scoped settings.
+
+### Security
+- Scoped `ooasis.apiHost` configuration setting to `machine` to prevent untrusted workspaces from hijacking the API endpoint.
+- Enforced strict workspace path containment checks on `openFile` webview messages.
+- Hardened webview Content Security Policy (CSP) by removing `blob:` from `script-src` and adding `base-uri 'none'` and `form-action 'none'`.
+- Escaped error text in webview to prevent HTML injection via `errorHtml`.
+- Restricted inline styles and enabled native MathML profile in DOMPurify to mitigate UI redressing and mutation XSS (mXSS).
+
+### Fixed
+- Resolved `Webview Logging Test Suite` failure in VS Code extension host by preserving and mocking `console` property descriptors via `Object.defineProperty`.
+
 ## [0.0.4] - 2026-10-13
 
 ### Added

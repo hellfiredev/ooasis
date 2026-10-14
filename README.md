@@ -24,8 +24,11 @@ The application is divided into two main parts that communicate via message pass
 - **Integrated Chat Interface**: Access the AI assistant directly from the secondary sidebar (Ooasis).
 - **Streaming Responses**: Real-time token streaming for fast and responsive AI replies.
 - **Reasoning Display**: Dedicated UI components for displaying the AI's internal reasoning and thought processes.
-- **Modern Web UI**: Beautiful and responsive UI powered by React and standard CSS.
-- **Context-Aware**: Capable of reading active files and interacting with the VS Code workspace context.
+- **Agentic Workspace Tools**: Secure agent tools for exploring and modifying code (`read_file`, `write_file`, `replace_in_file`, `list_directory`, `search_workspace`).
+- **Terminal Execution Sandbox**: Integrated terminal execution (`run_in_terminal`) with interactive user confirmation and sandbox safeguards that block commands attempting to escape or modify paths outside the workspace.
+- **Session Management**: Persistent chat history per workspace, automatic conversation summarization, token usage tracking, and markdown export.
+- **Modern Web UI**: Beautiful and responsive UI powered by React 19, KaTeX math formatting, and standard CSS.
+- **Privacy & Local-First**: Works completely locally with OpenAI-compatible endpoints (LM Studio, Ollama, etc.) without telemetry or cloud tracking. Requires VS Code Workspace Trust.
 
 ## Extension Settings
 
@@ -33,10 +36,12 @@ Ooasis contributes the following configurable settings (`settings.json`):
 
 | Setting | Type | Default | Description |
 | :--- | :---: | :---: | :--- |
-| `ooasis.apiHost` | `string` | `"http://127.0.0.1:1234"` | API host for the OpenAI-compatible LLM endpoint (LM Studio, Ollama, etc.). |
+| `ooasis.apiHost` | `string` | `"http://127.0.0.1:1234"` | API host for the OpenAI-compatible LLM endpoint (LM Studio, Ollama, etc.). Scoped to machine-level to prevent untrusted workspace tampering. |
 | `ooasis.maxAgentIterations` | `integer` | `10` | Maximum number of agentic tool iterations per request. |
 | `ooasis.maxContinuations` | `integer` | `3` | Maximum number of continuation requests when responses are truncated. |
 | `ooasis.history.maxSessions` | `integer` | `100` | Maximum number of saved chat sessions per workspace (`0` = unlimited). |
+| `ooasis.terminalSandbox.enabled` | `boolean` | `true` | Enable sandbox for `run_terminal` tool to prevent modifying files outside the workspace. |
+| `ooasis.terminalSandbox.allowTempDirectory` | `boolean` | `false` | Allow terminal commands to modify files in the system temporary directory. |
 
 ## Development Setup
 
@@ -87,3 +92,42 @@ Use `vsce` to package the extension. Make sure your `.vscodeignore` correctly ig
 npx @vscode/vsce package
 ```
 This will generate a `ooasis-x.x.x.vsix` file in your root directory, which can be installed manually in VS Code or published to the Marketplace.
+
+## Testing & Quality
+
+Run the test suite and linters to verify changes:
+
+```bash
+# Run ESLint on the extension host
+npm run lint
+
+# Run Oxlint on the webview UI
+npm --prefix webview-ui run lint
+
+# Run unit and integration tests
+npm test
+```
+
+## Security & Privacy
+
+Ooasis is built with security as a core architectural priority:
+- **Strict Path Containment**: Tool file operations (`read_file`, `write_file`, `replace_in_file`, `list_directory`, `search_workspace`) and webview `openFile` messages are strictly confined within the workspace root.
+- **Terminal Sandbox**: Integrated shell execution validates commands to prevent directory traversal, destructive modifications, and path escapes outside the workspace.
+- **Workspace Trust**: Untrusted workspaces are explicitly blocked (`untrustedWorkspaces: { supported: false }`).
+- **Webview CSP**: Hardened Content Security Policy with nonces, `base-uri 'none'`, and `form-action 'none'`.
+- **Zero Telemetry**: No tracking, analytics, or external cloud requests.
+
+For detailed security guidelines or to report a vulnerability, see [SECURITY.md](SECURITY.md).
+
+## Contributing
+
+We welcome community contributions! Please read our [CONTRIBUTING.md](CONTRIBUTING.md) guide and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before submitting issues or pull requests.
+
+## Support
+
+Need help or want to share feedback? Check out [SUPPORT.md](SUPPORT.md) or open a discussion on GitHub.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
