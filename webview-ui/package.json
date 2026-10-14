@@ -13,7 +13,7 @@
     "@types/katex": "^0.16.8",
     "dompurify": "^3.4.16",
     "katex": "^0.18.10",
-    "marked": "^18.0.14",
+    "marked": "^18.1.0",
     "marked-katex-extension": "^5.1.13",
     "pdf-parse": "^2.4.5",
     "react": "^19.2.8",
