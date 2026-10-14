@@ -85,7 +85,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       this.postToWebview({
         command: 'askConfirmation',
         id,
-        text: `The AI wants to run: ${command}`,
+        text: `Waiting for confirmation:\n\n${command}`,
       });
     });
   }
