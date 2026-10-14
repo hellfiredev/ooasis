@@ -41,3 +41,32 @@ export function getMaxSessions(): number {
   }
   return DEFAULT_MAX_SESSIONS;
 }
+
+export const DEFAULT_TERMINAL_SANDBOX_ENABLED = true;
+export const DEFAULT_TERMINAL_SANDBOX_ALLOW_TEMP = false;
+
+export function isTerminalSandboxEnabled(): boolean {
+  try {
+    const config = vscode.workspace.getConfiguration('ooasis');
+    const value = config.get<boolean>('terminalSandbox.enabled');
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    return DEFAULT_TERMINAL_SANDBOX_ENABLED;
+  } catch {
+    return DEFAULT_TERMINAL_SANDBOX_ENABLED;
+  }
+}
+
+export function isTerminalSandboxAllowTemp(): boolean {
+  try {
+    const config = vscode.workspace.getConfiguration('ooasis');
+    const value = config.get<boolean>('terminalSandbox.allowTempDirectory');
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    return DEFAULT_TERMINAL_SANDBOX_ALLOW_TEMP;
+  } catch {
+    return DEFAULT_TERMINAL_SANDBOX_ALLOW_TEMP;
+  }
+}

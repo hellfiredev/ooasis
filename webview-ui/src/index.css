@@ -372,7 +372,8 @@ body {
 
 .tool-status.running { color: var(--warning); }
 .tool-status.done { color: var(--success); }
-.tool-status.error { color: var(--error); }
+.tool-status.error,
+.tool-status.failed { color: var(--error); }
 
 
 /* ── Thinking indicator ────────────────────── */

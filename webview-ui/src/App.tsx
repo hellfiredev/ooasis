@@ -55,7 +55,7 @@ interface ToolCall {
   name: string;
   args: string;
   result?: string;
-  status: 'running' | 'done' | 'error';
+  status: 'running' | 'done' | 'failed' | 'error';
   open?: boolean;
 }
 
@@ -104,6 +104,19 @@ function parseToolTarget(argsJson: string): { target: string; isFile: boolean; f
     // If not valid JSON, ignore
   }
   return { target: '', isFile: false };
+}
+
+function isToolError(result?: string, isError?: boolean): boolean {
+  if (isError !== undefined) return isError;
+  if (!result || typeof result !== 'string') return false;
+  const trimmed = result.trim();
+  return (
+    trimmed.startsWith('Error:') ||
+    trimmed.startsWith('Error ') ||
+    trimmed.startsWith('Command denied by user') ||
+    trimmed.includes('\n\nERROR:') ||
+    trimmed.includes('ERROR: ')
+  );
 }
 
 interface ConfirmationRequest {
@@ -160,14 +173,17 @@ function entriesToMessages(entries: DisplayEntry[]): ChatMessage[] {
           content: entry.text ? renderMd(entry.text) : '',
           reasoning: entry.reasoning ? renderMd(entry.reasoning) : undefined,
           reasoningTimeMs: entry.reasoningTimeMs,
-          toolCalls: entry.toolCalls?.map(tc => ({
-            id: tc.id,
-            name: tc.name,
-            args: tc.args,
-            result: tc.result,
-            status: 'done' as const,
-            open: false,
-          })),
+          toolCalls: entry.toolCalls?.map(tc => {
+            const isError = isToolError(tc.result);
+            return {
+              id: tc.id,
+              name: tc.name,
+              args: tc.args,
+              result: tc.result,
+              status: isError ? 'failed' : 'done',
+              open: false,
+            };
+          }),
         };
       case 'error':
         return { id: newMessageId(), role: 'assistant', content: errorHtml(entry.text) };
@@ -304,11 +320,16 @@ function App() {
             if (!msg.toolCalls) return msg;
             return {
               ...msg,
-              toolCalls: msg.toolCalls.map(tc => 
-                tc.id === message.toolCallId
-                  ? { ...tc, result: message.result, status: 'done', open: false }
-                  : tc
-              )
+              toolCalls: msg.toolCalls.map(tc => {
+                if (tc.id !== message.toolCallId) return tc;
+                const isError = isToolError(message.result, message.isError);
+                return {
+                  ...tc,
+                  result: message.result,
+                  status: isError ? 'failed' : 'done',
+                  open: false,
+                };
+              })
             };
           }));
           break;
@@ -806,7 +827,7 @@ function App() {
                           )
                         )}
                         <span className={`tool-status ${tc.status}`}>
-                          {tc.status === 'running' ? 'running' : 'done'}
+                          {tc.status === 'running' ? 'running' : (tc.status === 'failed' || tc.status === 'error') ? 'failed' : 'done'}
                         </span>
                       </div>
                     );

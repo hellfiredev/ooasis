@@ -10,6 +10,8 @@ import {
   SearchWorkspaceArgs,
   ListDirectoryArgs,
 } from './types/chat';
+import { TerminalSandbox } from './sandbox/terminalSandbox';
+import { isTerminalSandboxEnabled, isTerminalSandboxAllowTemp } from './config';
 
 // ─── Tool Definitions (llama.cpp / OpenAI-compatible format) ─────────────────
 
@@ -100,7 +102,7 @@ export const AGENT_TOOLS = [
     function: {
       name: 'run_terminal',
       description:
-        'Execute a shell command in the workspace. Use for running builds, tests, npm scripts, or any CLI tool. Avoid interactive commands.',
+        'Execute a shell command in the workspace. Use for running builds, tests, npm scripts, or any CLI tool. Commands run inside a sandbox to prevent modifying files outside the workspace. Avoid interactive commands.',
       parameters: {
         type: 'object',
         properties: {
@@ -170,11 +172,24 @@ export const AGENT_TOOLS = [
 
 export class ToolExecutor {
   private _terminal: vscode.Terminal | undefined;
+  private readonly _sandbox: TerminalSandbox;
 
   constructor(
     private readonly _workspaceRoot: string | undefined,
-    private readonly _askUserConfirmation?: (command: string) => Promise<boolean>
-  ) {}
+    private readonly _askUserConfirmation?: (command: string) => Promise<boolean>,
+    sandbox?: TerminalSandbox
+  ) {
+    this._sandbox =
+      sandbox ??
+      new TerminalSandbox(this._workspaceRoot ?? '.', {
+        enabled: isTerminalSandboxEnabled(),
+        allowTempDirectory: isTerminalSandboxAllowTemp(),
+      });
+  }
+
+  get sandbox(): TerminalSandbox {
+    return this._sandbox;
+  }
 
   async execute(toolName: string, argsJson: string): Promise<string> {
     try {
@@ -328,6 +343,16 @@ export class ToolExecutor {
   // ── run_terminal ───────────────────────────────────────────────────────────
 
   private async runTerminal(args: RunTerminalArgs): Promise<string> {
+    const cwd = args.cwd
+      ? this.resolveWorkspacePath(args.cwd)
+      : (this._workspaceRoot ?? '.');
+
+    // Sandbox validation: Prevent modifying files outside the workspace
+    const validation = this._sandbox.validate(args.command, cwd);
+    if (!validation.allowed) {
+      return `Error: Sandbox violation: ${validation.reason}`;
+    }
+
     if (this._askUserConfirmation) {
       const isAllowed = await this._askUserConfirmation(args.command);
       if (!isAllowed) {
@@ -335,9 +360,7 @@ export class ToolExecutor {
       }
     }
 
-    const cwd = args.cwd
-      ? this.resolveWorkspacePath(args.cwd)
-      : (this._workspaceRoot ?? '.');
+    const { command: execCommand, env } = this._sandbox.prepareCommand(args.command, cwd);
 
     return new Promise((resolve) => {
       // Use a disposable terminal that captures output
@@ -345,7 +368,7 @@ export class ToolExecutor {
       const { exec } = require('child_process') as typeof import('child_process');
 
       const timeout = 30_000; // 30s max
-      const child = exec(args.command, { cwd, timeout }, (error, stdout, stderr) => {
+      const child = exec(execCommand, { cwd, timeout, env }, (error, stdout, stderr) => {
         const lines: string[] = [];
         if (stdout.trim()) { lines.push(`STDOUT:\n${stdout.trim()}`); }
         if (stderr.trim()) { lines.push(`STDERR:\n${stderr.trim()}`); }

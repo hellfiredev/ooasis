@@ -80,6 +80,16 @@
           "default": 100,
           "minimum": 0,
           "description": "Maximum number of saved chat sessions per workspace. Oldest are deleted first. 0 = unlimited."
+        },
+        "ooasis.terminalSandbox.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable sandbox for run_terminal tool to prevent modifying files outside the workspace."
+        },
+        "ooasis.terminalSandbox.allowTempDirectory": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow terminal commands to modify files in the system temporary directory."
         }
       }
     }

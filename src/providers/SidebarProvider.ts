@@ -1016,11 +1016,19 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
           const result = await this._toolExecutor.execute(tc.function.name, tc.function.arguments);
 
+          const isError =
+            result.startsWith('Error:') ||
+            result.startsWith('Error ') ||
+            result.startsWith('Command denied by user') ||
+            result.includes('\n\nERROR:') ||
+            result.includes('ERROR: ');
+
           // Only run_terminal output is surfaced in the UI / saved log; the model
           // still receives the full result via toolResultMessages below.
           this.postToWebview({
             command: 'toolResult',
             toolCallId: tc.id,
+            isError,
             ...(shouldShowToolOutput(tc.function.name) && { result }),
           });
 
