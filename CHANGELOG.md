@@ -30,7 +30,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 - Real-time token streaming with dedicated collapsible reasoning block display.
 - Markdown and KaTeX math formula rendering in chat responses.
 - Agentic workspace tools with strict path containment (`read_file`, `write_file`, `replace_in_file`, `list_directory`, `search_workspace`).
-- Terminal execution with user confirmation safeguard (`run_in_terminal`).
+- Terminal execution with user confirmation safeguard (`run_terminal`).
 - Session history persistence, context summarization, and token usage tracking.
 - Configurable OpenAI-compatible local LLM endpoint (`ooasis.apiHost`).
 - Multi-platform CI workflow, security policy, and open-source contribution guidelines.

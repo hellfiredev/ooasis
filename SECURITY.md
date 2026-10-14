@@ -59,7 +59,7 @@ Ooasis operates locally inside the user's VS Code instance, bridging local LLMs 
 - **Policy**: Any pull request modifying path resolution in `src/tools.ts` must maintain path containment and include automated test coverage.
 
 ### 2. Terminal & Tool Execution Safeguards
-- **Terminal Execution**: When executing terminal commands (`run_in_terminal`), the command is directed to the user's integrated terminal in the workspace context.
+- **Terminal Execution**: When executing terminal commands (`run_terminal`), commands require explicit interactive user confirmation before execution, and run within the workspace directory with output capture.
 - **Human Oversight**: Users should review agentic terminal actions, especially in unfamiliar or newly cloned repositories.
 
 ### 3. Workspace Trust
